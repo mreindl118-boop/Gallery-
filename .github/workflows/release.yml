@@ -185,7 +185,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          $latest = (gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>$null) -replace '^v', ''
+          # 404 means nothing is published yet; any other failure must not silently skip this check.
+          $out = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            if ("$out" -match 'HTTP 404') { Write-Host 'No published release yet'; exit 0 }
+            throw "Could not read the latest release: $out"
+          }
+          $latest = "$out".Trim() -replace '^v', ''
+          if ($latest -notmatch '^\d+\.\d+\.\d+') { throw "Unexpected latest release tag '$out'" }
           if (-not $latest -or $latest -eq $env:VERSION) { Write-Host "No earlier release to upgrade from (latest: '$latest')"; exit 0 }
           ./scripts/ci/upgrade-from-release.ps1 -FromVersion $latest -NewDist dist -NewVersion $env:VERSION
 

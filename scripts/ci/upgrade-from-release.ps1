@@ -83,9 +83,10 @@ try {
   $env:GALLERYLAB_HIDDEN = '1'
   $env:GALLERYLAB_UPDATE_CHECK_DELAY_MS = '3600000'
   Start-Process -FilePath $exe
-  Wait-Until { Test-Path -LiteralPath (Join-Path $userData 'logs\updates.log') } 60 'the upgraded app started its updater'
-  $log = Get-Content -LiteralPath (Join-Path $userData 'logs\updates.log') -Raw
-  Assert ($log -match "start: installer $([regex]::Escape($NewVersion)), auto true") 'the upgraded app updates automatically from now on'
+  $logPath = Join-Path $userData 'logs\updates.log'
+  $expected = "start: installer $([regex]::Escape($NewVersion)), auto true"
+  # Read and match together: the log file exists a moment before the line is written.
+  Wait-Until { (Get-Content -LiteralPath $logPath -Raw -ErrorAction Stop) -match $expected } 60 'the upgraded app updates automatically from now on'
   Stop-Gallery
   $s = Get-Content -LiteralPath (Join-Path $userData 'settings.json') -Raw | ConvertFrom-Json
   Assert ($s.libraryPath -eq $library -and $s.theme -eq 'dark') 'the old settings were kept'
