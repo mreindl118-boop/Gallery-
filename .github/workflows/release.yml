@@ -85,7 +85,11 @@ jobs:
           foreach ($f in @('latest.yml', "galleryLAB-$v-setup.exe.blockmap")) {
             if (-not (Test-Path "dist/$f")) { throw "electron-builder did not write dist/$f" }
           }
-          $files = @("dist/galleryLAB-$v-setup.exe", "dist/galleryLAB-$v-portable.exe")
+          # Unversioned copies give a permanent "always the newest" download link:
+          # https://github.com/<repo>/releases/latest/download/galleryLAB-setup.exe
+          Copy-Item "dist/galleryLAB-$v-setup.exe" dist/galleryLAB-setup.exe
+          Copy-Item "dist/galleryLAB-$v-portable.exe" dist/galleryLAB-portable.exe
+          $files = @("dist/galleryLAB-$v-setup.exe", "dist/galleryLAB-$v-portable.exe", 'dist/galleryLAB-setup.exe', 'dist/galleryLAB-portable.exe')
           $lines = foreach ($f in $files) { $h = Get-FileHash $f -Algorithm SHA256; "$($h.Hash.ToLower())  $(Split-Path $f -Leaf)" }
           $lines | Set-Content -Path dist/SHA256SUMS.txt -Encoding ascii
           Get-Content dist/latest.yml
@@ -142,6 +146,8 @@ jobs:
             dist/galleryLAB-${{ steps.version.outputs.version }}-setup.exe
             dist/galleryLAB-${{ steps.version.outputs.version }}-setup.exe.blockmap
             dist/galleryLAB-${{ steps.version.outputs.version }}-portable.exe
+            dist/galleryLAB-setup.exe
+            dist/galleryLAB-portable.exe
             dist/latest.yml
             dist/latest-portable.json
             dist/SHA256SUMS.txt
@@ -173,6 +179,15 @@ jobs:
       - name: Update the release build in place (installer, manual upgrade, portable)
         shell: pwsh
         run: ./scripts/ci/update-test.ps1 -OldDist dist -OldVersion '${{ needs.build.outputs.version }}' -NewDist dist-new -NewVersion 99.0.0
+      - name: Upgrade over the latest published release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          $latest = (gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>$null) -replace '^v', ''
+          if (-not $latest -or $latest -eq $env:VERSION) { Write-Host "No earlier release to upgrade from (latest: '$latest')"; exit 0 }
+          ./scripts/ci/upgrade-from-release.ps1 -FromVersion $latest -NewDist dist -NewVersion $env:VERSION
 
   publish:
     name: Publish the GitHub Release
@@ -198,6 +213,8 @@ jobs:
             "dist/galleryLAB-$VERSION-setup.exe"
             "dist/galleryLAB-$VERSION-setup.exe.blockmap"
             "dist/galleryLAB-$VERSION-portable.exe"
+            dist/galleryLAB-setup.exe
+            dist/galleryLAB-portable.exe
             dist/latest.yml
             dist/latest-portable.json
             dist/SHA256SUMS.txt
@@ -218,3 +235,4 @@ jobs:
               --title "galleryLAB $VERSION" --notes-file ".github/release-notes/$tag.md" "${flags[@]}"
           fi
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag"
+          echo "Newest installer, always: https://github.com/$GITHUB_REPOSITORY/releases/latest/download/galleryLAB-setup.exe"

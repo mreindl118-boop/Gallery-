@@ -81,6 +81,15 @@ jobs:
           node scripts/portable-feed.mjs "dist/galleryLAB-$v-portable.exe" dist
           ./scripts/ci/build-newer.ps1 -Version 99.0.0 -Out dist-new
           ./scripts/ci/update-test.ps1 -OldDist dist -OldVersion $v -NewDist dist-new -NewVersion 99.0.0
+      - name: Upgrade over the latest published release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $latest = (gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>$null) -replace '^v', ''
+          if (-not $latest -or $latest -eq $v) { Write-Host "No earlier release to upgrade from (latest: '$latest')"; exit 0 }
+          ./scripts/ci/upgrade-from-release.ps1 -FromVersion $latest -NewDist dist -NewVersion $v
       - uses: actions/upload-artifact@v4
         with:
           name: galleryLAB-windows
