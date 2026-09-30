@@ -52,7 +52,8 @@ export function cardImportLine(p: ImportProgress | null | undefined): string | n
 
 export function timeLeftLine(seconds: number | null): string | null {
   if (seconds === null || !Number.isFinite(seconds)) return null
-  if (seconds < 15) return 'Almost done.'
+  if (seconds < 5) return 'Almost done.'
+  if (seconds < 15) return 'A few seconds left.'
   if (seconds < 60) return 'Less than a minute left.'
   const minutes = Math.round(seconds / 60)
   if (minutes < 2) return 'About a minute left.'
@@ -93,7 +94,8 @@ export function importHeadline(p: ImportProgress): string {
 /** Quiet second lines under the headline: throughput, duplicates, failures. */
 export function importDetails(p: ImportProgress): string[] {
   const lines: string[] = []
-  if (isImporting(p) && p.filesPerSecond >= 1) {
+  // Throughput only matters for batches big enough to wait for.
+  if (isImporting(p) && p.filesPerSecond >= 1 && p.total >= 200) {
     lines.push(`${plural(Math.round(p.filesPerSecond), 'photo', 'photos')} a second`)
   }
   if (p.duplicates > 0) lines.push(`${plural(p.duplicates, 'duplicate', 'duplicates')} skipped`)
