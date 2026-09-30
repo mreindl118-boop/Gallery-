@@ -152,7 +152,14 @@ async function main(): Promise<void> {
       'updates.status': () => updates.get(),
       'updates.check': () => updates.check(),
       'updates.download': () => updates.download(),
-      'updates.install': () => updates.install(),
+      'updates.install': () => {
+        if (!updates.install()) {
+          throw new GalleryError(
+            'no-update',
+            'There’s no update ready to install right now. Check for updates in Settings.'
+          )
+        }
+      },
       'updates.setAuto': async ({ auto }) => {
         await settings.update({ autoUpdate: auto })
         return updates.setAuto(auto)

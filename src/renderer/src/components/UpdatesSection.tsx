@@ -102,7 +102,15 @@ export function UpdatesSection() {
           onChange={(e) => {
             const auto = e.target.checked
             set({ updates: { ...s, auto } })
-            void call(window.gallery.invoke('updates.setAuto', { auto }))
+            window.gallery.invoke('updates.setAuto', { auto }).then(
+              (next) => set({ updates: next }),
+              (err: unknown) => {
+                // Saving failed: show the setting as it really is.
+                const current = useApp.getState().updates
+                if (current) set({ updates: { ...current, auto: !auto } })
+                reportError(err)
+              }
+            )
           }}
         />
         <span>

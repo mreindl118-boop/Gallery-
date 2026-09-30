@@ -23,8 +23,15 @@ import {
 const FIRST_CHECK_MS = 15_000
 const EVERY_MS = 4 * 60 * 60 * 1000
 
-const OFFLINE_MESSAGE = 'galleryLAB couldn’t check for updates. Check your internet connection; it tries again later.'
-const DOWNLOAD_MESSAGE = 'The update couldn’t be downloaded. galleryLAB tries again later, or you can try now.'
+/** Messages depend on whether galleryLAB will retry by itself (automatic updates on). */
+const offlineMessage = (auto: boolean): string =>
+  auto
+    ? 'galleryLAB couldn’t check for updates. Check your internet connection; it tries again later.'
+    : 'galleryLAB couldn’t check for updates. Check your internet connection and try again.'
+const downloadMessage = (auto: boolean): string =>
+  auto
+    ? 'The update couldn’t be downloaded. galleryLAB tries again later, or you can try now.'
+    : 'The update couldn’t be downloaded. Check your internet connection and try again.'
 const STUCK_MESSAGE =
   'galleryLAB downloaded an update but couldn’t finish installing it here. Download the new version from the releases page and replace this file with it.'
 
@@ -43,6 +50,12 @@ interface Backend {
 }
 
 type Patch = (p: Partial<UpdateStatus>) => void
+/** What a backend needs from the controller. */
+interface Ctx {
+  patch: Patch
+  /** Whether automatic updates are on right now (for message wording). */
+  auto: () => boolean
+}
 
 /**
  * Keeps galleryLAB current without moving it. The installer build uses
@@ -56,6 +69,7 @@ export class UpdateController {
   private timer: ReturnType<typeof setInterval> | null = null
   private firstTimer: ReturnType<typeof setTimeout> | null = null
   private busy: Promise<void> | null = null
+  private downloading: Promise<void> | null = null
   private readonly autoApply = process.env['GALLERYLAB_UPDATE_AUTO_APPLY'] === '1'
 
   constructor(
@@ -63,7 +77,7 @@ export class UpdateController {
     private readonly onChange: (s: UpdateStatus) => void
   ) {
     const feed = testFeed()
-    this.backend = pickBackend(feed, (p) => this.patch(p))
+    this.backend = pickBackend(feed, { patch: (p) => this.patch(p), auto: () => this.status.auto })
     this.status = {
       kind: this.backend?.kind ?? 'none',
       current: app.getVersion(),
@@ -121,15 +135,22 @@ export class UpdateController {
     return this.status
   }
 
+  /** One download at a time; a second click waits for the first. */
   async download(): Promise<UpdateStatus> {
-    if (!this.backend || this.status.phase !== 'available') return this.status
-    await this.backend.download().catch(() => undefined)
+    const backend = this.backend
+    if (!backend || (this.status.phase !== 'available' && !this.downloading)) return this.status
+    this.downloading ??= backend.download().finally(() => {
+      this.downloading = null
+    })
+    await this.downloading.catch(() => undefined)
     return this.status
   }
 
-  install(): void {
-    if (!this.backend || this.status.phase !== 'ready') return
+  /** False when there is nothing ready to install (the caller tells the user). */
+  install(): boolean {
+    if (!this.backend || this.status.phase !== 'ready') return false
     this.backend.install()
+    return true
   }
 
   setAuto(auto: boolean): UpdateStatus {
@@ -161,8 +182,8 @@ function testFeed(): string | null {
   return /^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/)/.test(url) ? url : null
 }
 
-function pickBackend(feed: string | null, patch: Patch): Backend | null {
-  if (process.env['GALLERYLAB_UPDATE_FAKE'] === '1') return new FakeBackend(patch)
+function pickBackend(feed: string | null, ctx: Ctx): Backend | null {
+  if (process.env['GALLERYLAB_UPDATE_FAKE'] === '1') return new FakeBackend(ctx.patch)
   if (!app.isPackaged || process.platform !== 'win32') return null
   const exeDir = dirname(app.getPath('exe'))
   const portableFile = process.env['PORTABLE_EXECUTABLE_FILE']
@@ -174,10 +195,10 @@ function pickBackend(feed: string | null, patch: Patch): Backend | null {
   // An installed copy always has its uninstaller beside it. That decides the mode, whatever
   // PORTABLE_EXECUTABLE_* variables it may have inherited from some other portable app.
   if (installed) {
-    return existsSync(join(process.resourcesPath, 'app-update.yml')) ? new InstallerBackend(feed, patch) : null
+    return existsSync(join(process.resourcesPath, 'app-update.yml')) ? new InstallerBackend(feed, ctx) : null
   }
   if (portableFile && /\.exe$/i.test(portableFile) && existsSync(portableFile)) {
-    return new PortableBackend(portableFile, feed, patch)
+    return new PortableBackend(portableFile, feed, ctx)
   }
   return null
 }
@@ -198,11 +219,16 @@ class InstallerBackend implements Backend {
   readonly kind = 'installer' as const
   private updater: NsisUpdater | null = null
   private version: string | null = null
+  /** A download is under way, so an error means the download failed, not the check. */
+  private fetching = false
+  private readonly patch: Patch
 
   constructor(
     private readonly feed: string | null,
-    private readonly patch: Patch
-  ) {}
+    private readonly ctx: Ctx
+  ) {
+    this.patch = ctx.patch
+  }
 
   async init(): Promise<void> {
     const u = new NsisUpdater()
@@ -221,9 +247,14 @@ class InstallerBackend implements Backend {
     // for folders with spaces.
     if (this.feed) u.setFeedURL({ provider: 'generic', url: this.feed })
 
-    u.on('checking-for-update', () => this.patch({ phase: 'checking', message: null }))
+    u.on('checking-for-update', () => {
+      this.version = null
+      this.fetching = false
+      this.patch({ phase: 'checking', message: null })
+    })
     u.on('update-available', (info) => {
       this.version = info.version
+      this.fetching = u.autoDownload
       this.patch({ phase: 'available', version: info.version, lastChecked: nowIso() })
     })
     u.on('update-not-available', () =>
@@ -232,15 +263,18 @@ class InstallerBackend implements Backend {
     u.on('download-progress', (p) =>
       this.patch({ phase: 'downloading', version: this.version, percent: Math.floor(p.percent) })
     )
-    u.on('update-downloaded', (info) =>
+    u.on('update-downloaded', (info) => {
+      this.fetching = false
       this.patch({ phase: 'ready', version: info.version, percent: 100, message: null })
-    )
+    })
     u.on('error', (err) => {
       updateLog('error', 'electron-updater', err)
-      const downloading = this.version !== null
+      const wasDownloading = this.fetching && this.version !== null
+      this.fetching = false
       this.patch({
-        phase: downloading ? 'available' : 'error',
-        message: downloading ? DOWNLOAD_MESSAGE : OFFLINE_MESSAGE,
+        phase: wasDownloading ? 'available' : 'error',
+        percent: null,
+        message: wasDownloading ? downloadMessage(this.ctx.auto()) : offlineMessage(this.ctx.auto()),
         lastChecked: nowIso()
       })
     })
@@ -258,6 +292,7 @@ class InstallerBackend implements Backend {
 
   async download(): Promise<void> {
     if (!this.updater) return
+    this.fetching = true
     this.patch({ phase: 'downloading', percent: 0, message: null })
     try {
       await this.updater.downloadUpdate()
@@ -294,11 +329,15 @@ class PortableBackend implements Backend {
   private pending: PortableFeed | null = null
   private readonly fetchFn: FetchLike = (url) => net.fetch(url, { headers: { 'Cache-Control': 'no-cache' } })
 
+  private readonly patch: Patch
+
   constructor(
     private readonly exePath: string,
     private readonly feed: string | null,
-    private readonly patch: Patch
-  ) {}
+    private readonly ctx: Ctx
+  ) {
+    this.patch = ctx.patch
+  }
 
   async init(): Promise<void> {
     await cleanupLeftovers(this.exePath, app.getVersion())
@@ -340,7 +379,7 @@ class PortableBackend implements Backend {
       if (this.autoDownload) await this.download()
     } catch (err) {
       updateLog('error', 'portable check failed', err)
-      this.patch({ phase: 'error', message: OFFLINE_MESSAGE, lastChecked: nowIso() })
+      this.patch({ phase: 'error', message: offlineMessage(this.ctx.auto()), lastChecked: nowIso() })
     }
   }
 
@@ -365,7 +404,7 @@ class PortableBackend implements Backend {
       this.patch({ phase: 'ready', version: feed.version, percent: 100 })
     } catch (err) {
       updateLog('error', 'portable download failed', err)
-      this.patch({ phase: 'available', percent: null, message: DOWNLOAD_MESSAGE })
+      this.patch({ phase: 'available', percent: null, message: downloadMessage(this.ctx.auto()) })
     }
   }
 
@@ -393,6 +432,8 @@ class PortableBackend implements Backend {
       updateLog('error', `PowerShell not found at ${powershell}`)
       return false
     }
+    // Count the attempt before handing off, synchronously: this may run inside will-quit.
+    recordAttempt(this.exePath)
     try {
       const env: NodeJS.ProcessEnv = {
         ...process.env,
@@ -420,7 +461,6 @@ class PortableBackend implements Backend {
       child.on('error', (err) => updateLog('error', 'update helper failed to start', err))
       child.unref()
       this.handedOff = true
-      void recordAttempt(this.exePath)
       updateLog('info', `helper started (pid ${child.pid ?? '?'}, relaunch ${relaunch}) for ${this.exePath}`)
       return true
     } catch (err) {

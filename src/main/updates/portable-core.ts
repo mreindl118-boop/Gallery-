@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createWriteStream, existsSync, promises as fs } from 'node:fs'
+import { createWriteStream, existsSync, promises as fs, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -212,13 +212,19 @@ export function helperEnv(
   }
 }
 
-/** Times the helper has been started for the waiting update; after two failures, stop offering it. */
-export async function recordAttempt(exePath: string): Promise<number> {
+/**
+ * Count one more helper start for the waiting update; after two that never
+ * complete, galleryLAB stops offering it. Synchronous and atomic (temp file +
+ * rename) because it runs while galleryLAB is quitting.
+ */
+export function recordAttempt(exePath: string): number {
   const { readyMeta } = sidecars(exePath)
   try {
-    const meta = JSON.parse(await fs.readFile(readyMeta, 'utf8')) as Record<string, unknown>
+    const meta = JSON.parse(readFileSync(readyMeta, 'utf8')) as Record<string, unknown>
     const attempts = (typeof meta['attempts'] === 'number' ? meta['attempts'] : 0) + 1
-    await fs.writeFile(readyMeta, JSON.stringify({ ...meta, attempts }))
+    const tmp = `${readyMeta}.tmp`
+    writeFileSync(tmp, JSON.stringify({ ...meta, attempts }))
+    renameSync(tmp, readyMeta)
     return attempts
   } catch {
     return 1

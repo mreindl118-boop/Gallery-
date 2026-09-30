@@ -45,6 +45,11 @@ function Stop-Gallery {
 
 function Get-Version([string] $Exe) { (Get-Item -LiteralPath $Exe).VersionInfo.ProductVersion }
 
+# Windows version resources carry only major.minor.patch (a prerelease 0.2.0-beta.1 reads 0.2.0.0).
+function Version-Core([string] $Version) { ($Version -split '-', 2)[0] }
+$OldCore = Version-Core $OldVersion
+$NewCore = Version-Core $NewVersion
+
 function Uninstall-Gallery([string] $Dir) {
   $u = Get-ChildItem -LiteralPath $Dir -Filter 'Uninstall*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($u) {
@@ -117,11 +122,11 @@ try {
   Start-Process -FilePath (Join-Path $OldDist "galleryLAB-$OldVersion-setup.exe") -ArgumentList '/S', "/D=$dir1" -Wait
   $exe1 = Join-Path $dir1 'galleryLAB.exe'
   Assert (Test-Path -LiteralPath $exe1) "old build installed into $dir1"
-  Assert ((Get-Version $exe1) -like "$OldVersion*") "installed version is $OldVersion"
+  Assert ((Get-Version $exe1) -like "$OldCore*") "installed version is $OldVersion"
   Assert (-not (Test-Path -LiteralPath $defaultInstall)) 'nothing installed in the default location'
 
   Start-Process -FilePath $exe1
-  Wait-Until { (Get-Version $exe1) -like "$NewVersion*" } 300 "the app updated itself to $NewVersion in $dir1"
+  Wait-Until { (Get-Version $exe1) -like "$NewCore*" } 300 "the app updated itself to $NewVersion in $dir1"
   Wait-Until { @(Get-Process -Name 'galleryLAB' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe1 }).Count -gt 0 } 90 'the updated app started again from the same folder'
   Assert (-not (Test-Path -LiteralPath $defaultInstall)) 'the update did not create a second copy in the default location'
   $entries = @(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | Get-ItemProperty | Where-Object { $_.DisplayName -like 'galleryLAB*' })
@@ -142,9 +147,9 @@ try {
   $dir2 = Join-Path $root 'Other place\galleryLAB'
   Start-Process -FilePath (Join-Path $OldDist "galleryLAB-$OldVersion-setup.exe") -ArgumentList '/S', "/D=$dir2" -Wait
   $exe2 = Join-Path $dir2 'galleryLAB.exe'
-  Assert ((Get-Version $exe2) -like "$OldVersion*") "old build installed into $dir2"
+  Assert ((Get-Version $exe2) -like "$OldCore*") "old build installed into $dir2"
   Start-Process -FilePath (Join-Path $NewDist "galleryLAB-$NewVersion-setup.exe") -ArgumentList '/S' -Wait
-  Wait-Until { (Get-Version $exe2) -like "$NewVersion*" } 120 "manual upgrade installed $NewVersion into $dir2"
+  Wait-Until { (Get-Version $exe2) -like "$NewCore*" } 120 "manual upgrade installed $NewVersion into $dir2"
   Assert (-not (Test-Path -LiteralPath $defaultInstall)) 'the manual upgrade did not create a second copy in the default location'
   Stop-Gallery
   Assert-UserDataKept

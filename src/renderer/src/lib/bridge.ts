@@ -6,6 +6,7 @@ export async function boot(): Promise<void> {
   const g = window.gallery
   const { set } = useApp.getState()
   let engineFromEvent = false
+  let updatesFromEvent = false
 
   g.onEvent((e) => {
     switch (e.type) {
@@ -26,6 +27,7 @@ export async function boot(): Promise<void> {
         set({ engine: e.state })
         break
       case 'updates.status':
+        updatesFromEvent = true
         onUpdateStatus(e.status)
         break
     }
@@ -37,7 +39,8 @@ export async function boot(): Promise<void> {
     g.invoke('library.status'),
     g.invoke('updates.status')
   ])
-  onUpdateStatus(updates)
+  // An update event that arrived while booting is newer than this snapshot.
+  if (!updatesFromEvent) onUpdateStatus(updates)
   applyTheme(info.resolvedTheme)
   const projects = status.state === 'ready' ? await g.invoke('projects.list') : []
   set({
@@ -60,8 +63,13 @@ let announced: string | null = null
 
 /** Keep the store current and say once, quietly, when an update is ready to install. */
 function onUpdateStatus(status: UpdateStatus): void {
-  const { set, notify } = useApp.getState()
+  const { set, notify, notices, dismiss } = useApp.getState()
   set({ updates: status })
+  if (status.phase !== 'ready') {
+    // The update stopped being installable (installed, failed, or removed): drop its notice.
+    for (const n of notices) if (n.key === 'update-ready') dismiss(n.id)
+    if (status.phase !== 'checking' && status.phase !== 'downloading') announced = null
+  }
   if (status.phase === 'ready' && status.version && announced !== status.version) {
     announced = status.version
     notify(`galleryLAB ${status.version} is ready. It installs when you quit.`, 'info', {

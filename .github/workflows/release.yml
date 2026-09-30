@@ -22,7 +22,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.inputs.version || github.ref_name }}
+  # The same group for a tag push (ref v0.1.1) and a manual run (input 0.1.1).
+  group: release-${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -211,7 +212,7 @@ jobs:
             fi
             echo "Release $tag exists; replacing its assets and notes as requested"
             gh release upload "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "galleryLAB $VERSION" --notes-file ".github/release-notes/$tag.md"
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "galleryLAB $VERSION" --notes-file ".github/release-notes/$tag.md" --draft=false
           else
             gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "galleryLAB $VERSION" --notes-file ".github/release-notes/$tag.md" "${flags[@]}"
