@@ -155,6 +155,7 @@ export const HELPER_SCRIPT = [
   '$ready = $env:GLAB_READY',
   '$exe = $env:GLAB_EXE',
   "$old = $exe + '.old'",
+  'trap { Log ("stopped by an error: " + $_.Exception.Message); break }',
   'Log ("started for " + $exe + " (app " + $env:GLAB_APP_PID + ", launcher " + $env:GLAB_LAUNCHER_PID + ")")',
   'foreach ($p in @($env:GLAB_APP_PID, $env:GLAB_LAUNCHER_PID)) {',
   '  if ($p -and [int]$p -gt 0) {',
@@ -190,6 +191,39 @@ export const HELPER_SCRIPT = [
   '}',
   ''
 ].join('\r\n')
+
+/**
+ * Starts the helper and exits at once. galleryLAB runs this with a hidden
+ * console; the helper it starts is a grandchild, so it outlives galleryLAB
+ * (Node puts direct children in a job that Windows kills when galleryLAB
+ * exits, but lets their own children leave it) and still gets a hidden
+ * console of its own, which Windows PowerShell needs to run at all.
+ *
+ *   GLAB_PS          full path to powershell.exe
+ *   GLAB_HELPER_B64  HELPER_SCRIPT, encoded for -EncodedCommand
+ */
+export const LAUNCHER_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  'function Log([string]$m) {',
+  '  if ($env:GLAB_LOG) {',
+  "    try { Add-Content -LiteralPath $env:GLAB_LOG -Value ((Get-Date).ToUniversalTime().ToString('o') + ' LAUNCHER ' + $m) } catch { }",
+  '  }',
+  '}',
+  'try {',
+  "  $helperArgs = @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass')",
+  '  $hidden = @{}',
+  '  # $IsLinux only exists in PowerShell 7 (used for tests); Windows PowerShell always hides the window.',
+  "  if (-not $IsLinux) { $helperArgs += @('-WindowStyle', 'Hidden'); $hidden.WindowStyle = 'Hidden' }",
+  "  $helperArgs += @('-EncodedCommand', $env:GLAB_HELPER_B64)",
+  '  $p = Start-Process -FilePath $env:GLAB_PS -ArgumentList $helperArgs -PassThru @hidden',
+  '  Log ("started the helper, pid " + $p.Id)',
+  '} catch {',
+  '  Log ("could not start the helper: " + $_.Exception.Message)',
+  '}',
+  ''
+].join('\r\n')
+
+export const encodedLauncher = (): string => Buffer.from(LAUNCHER_SCRIPT, 'utf16le').toString('base64')
 
 /** HELPER_SCRIPT as a PowerShell -EncodedCommand argument (base64 of UTF-16LE). */
 export const encodedHelper = (): string => Buffer.from(HELPER_SCRIPT, 'utf16le').toString('base64')

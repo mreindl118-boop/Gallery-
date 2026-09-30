@@ -11,8 +11,10 @@ import {
   fetchFeed,
   attemptsSoFar,
   encodedHelper,
+  encodedLauncher,
   hasReadyUpdate,
   HELPER_SCRIPT,
+  LAUNCHER_SCRIPT,
   helperEnv,
   readyVersion,
   recordAttempt,
@@ -139,6 +141,17 @@ describe('portable update helper', () => {
     }
     expect(HELPER_SCRIPT).toContain('[System.IO.File]::Replace($ready, $exe, $old)')
     expect(Buffer.from(encodedHelper(), 'base64').toString('utf16le')).toBe(HELPER_SCRIPT)
+  })
+
+  it('starts the helper through a short launcher that takes everything from the environment', () => {
+    expect([...LAUNCHER_SCRIPT].every((c) => c.charCodeAt(0) < 128)).toBe(true)
+    expect(LAUNCHER_SCRIPT).not.toMatch(/[A-Za-z]:\\/)
+    expect(LAUNCHER_SCRIPT).toContain('Start-Process -FilePath $env:GLAB_PS')
+    expect(LAUNCHER_SCRIPT).toContain('$env:GLAB_HELPER_B64')
+    expect(Buffer.from(encodedLauncher(), 'base64').toString('utf16le')).toBe(LAUNCHER_SCRIPT)
+    // Both encoded commands fit comfortably in a Windows command line and environment block.
+    expect(encodedLauncher().length).toBeLessThan(8000)
+    expect(encodedHelper().length).toBeLessThan(16000)
   })
 
   it('passes the exact exe path and its sidecars through the environment', () => {

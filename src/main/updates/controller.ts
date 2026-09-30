@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app, net } from 'electron'
@@ -13,6 +13,7 @@ import {
   fetchFeed,
   attemptsSoFar,
   encodedHelper,
+  encodedLauncher,
   hasReadyUpdate,
   helperEnv,
   readyVersion,
@@ -442,8 +443,12 @@ class PortableBackend implements Backend {
       delete env['PORTABLE_EXECUTABLE_FILE']
       delete env['PORTABLE_EXECUTABLE_DIR']
       delete env['PORTABLE_EXECUTABLE_APP_FILENAME']
-      // Detached: a non-detached child is placed in a job that Windows kills when galleryLAB exits.
-      const child = spawn(
+      // Not detached: a detached PowerShell has no console and exits at once. This short-lived
+      // launcher gets a hidden console and starts the real helper, which outlives galleryLAB.
+      env['GLAB_PS'] = powershell
+      env['GLAB_HELPER_B64'] = encodedHelper()
+      // Wait for the launcher (about a second): quitting first would kill it before the helper starts.
+      const run = spawnSync(
         powershell,
         [
           '-NoLogo',
@@ -454,14 +459,16 @@ class PortableBackend implements Backend {
           '-WindowStyle',
           'Hidden',
           '-EncodedCommand',
-          encodedHelper()
+          encodedLauncher()
         ],
-        { env, stdio: 'ignore', detached: true, windowsHide: true, cwd: dirname(this.exePath) }
+        { env, stdio: 'ignore', windowsHide: true, cwd: dirname(this.exePath), timeout: 15_000 }
       )
-      child.on('error', (err) => updateLog('error', 'update helper failed to start', err))
-      child.unref()
+      if (run.error || run.status !== 0) {
+        updateLog('error', `update launcher failed (status ${run.status ?? '-'})`, run.error ?? '')
+        return false
+      }
       this.handedOff = true
-      updateLog('info', `helper started (pid ${child.pid ?? '?'}, relaunch ${relaunch}) for ${this.exePath}`)
+      updateLog('info', `helper handed off (relaunch ${relaunch}) for ${this.exePath}`)
       return true
     } catch (err) {
       updateLog('error', 'could not start the update helper', err)
