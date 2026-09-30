@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
-import { existsSync, realpathSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { app, net } from 'electron'
 import { NsisUpdater } from 'electron-updater'
 import { compareVersions, portableFeedUrls, type PortableFeed } from '@shared/release'
@@ -164,37 +164,32 @@ function testFeed(): string | null {
 function pickBackend(feed: string | null, patch: Patch): Backend | null {
   if (process.env['GALLERYLAB_UPDATE_FAKE'] === '1') return new FakeBackend(patch)
   if (!app.isPackaged || process.platform !== 'win32') return null
-  const portableExe = ownPortableExe()
-  if (portableExe) return new PortableBackend(portableExe, feed, patch)
-  if (!existsSync(join(process.resourcesPath, 'app-update.yml'))) return null
-  return new InstallerBackend(feed, patch)
-}
-
-/**
- * The portable exe that launched this process, only if it really is our own
- * portable launcher: the variables are inherited by child processes, so an
- * installed galleryLAB started from another portable app would otherwise
- * mistake that app's exe for its own and overwrite it.
- */
-function ownPortableExe(): string | null {
-  const file = process.env['PORTABLE_EXECUTABLE_FILE']
-  const appName = process.env['PORTABLE_EXECUTABLE_APP_FILENAME']
-  if (!file || appName !== PORTABLE_APP_FILENAME || !/\.exe$/i.test(file) || !existsSync(file)) return null
-  // The portable launcher unpacks galleryLAB into the temp folder and runs it from there.
-  const real = (p: string) => {
-    try {
-      return realpathSync.native(p) // expands 8.3 short names, so TEMP and the exe path compare
-    } catch {
-      return resolve(p)
-    }
+  const exeDir = dirname(app.getPath('exe'))
+  const portableFile = process.env['PORTABLE_EXECUTABLE_FILE']
+  const installed = hasUninstaller(exeDir)
+  updateLog(
+    'info',
+    `mode check: exe ${app.getPath('exe')}, installed ${installed}, PORTABLE_EXECUTABLE_FILE ${portableFile ?? '-'}, PORTABLE_EXECUTABLE_APP_FILENAME ${process.env['PORTABLE_EXECUTABLE_APP_FILENAME'] ?? '-'}`
+  )
+  // An installed copy always has its uninstaller beside it. That decides the mode, whatever
+  // PORTABLE_EXECUTABLE_* variables it may have inherited from some other portable app.
+  if (installed) {
+    return existsSync(join(process.resourcesPath, 'app-update.yml')) ? new InstallerBackend(feed, patch) : null
   }
-  const rel = relative(real(app.getPath('temp')).toLowerCase(), real(app.getPath('exe')).toLowerCase())
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return null
-  return file
+  if (portableFile && /\.exe$/i.test(portableFile) && existsSync(portableFile)) {
+    return new PortableBackend(portableFile, feed, patch)
+  }
+  return null
 }
 
-/** electron-builder's APP_FILENAME for this product (its productFilename). */
-const PORTABLE_APP_FILENAME = 'galleryLAB'
+/** True when the folder holds the NSIS uninstaller ("Uninstall galleryLAB.exe"), i.e. a real install. */
+function hasUninstaller(dir: string): boolean {
+  try {
+    return readdirSync(dir).some((n) => /^uninstall .*\.exe$/i.test(n))
+  } catch {
+    return false
+  }
+}
 
 const nowIso = (): string => new Date().toISOString()
 

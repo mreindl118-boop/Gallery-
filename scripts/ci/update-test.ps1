@@ -160,6 +160,7 @@ try {
   Wait-Until { (Get-FileHash -LiteralPath $portable).Hash -eq $newHash } 300 'the portable exe was replaced by the new build at the same path'
   Wait-Until { @(Get-Process -Name 'galleryLAB' -ErrorAction SilentlyContinue).Count -gt 0 } 90 'the new portable build started'
   Wait-Until { @(Get-ChildItem -LiteralPath $tools -Force | Where-Object { $_.Name -ne (Split-Path $portable -Leaf) }).Count -eq 0 } 150 'no leftover update files beside the portable exe'
+  Assert (-not (Test-Path -LiteralPath $defaultInstall)) 'the portable build never ran the installer'
   Stop-Gallery
   Assert-UserDataKept
   Show-Diagnostics
