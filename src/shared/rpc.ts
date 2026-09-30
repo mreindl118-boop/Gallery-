@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ImportIssue, ImportProgress, ImportStatus, PhotoSummary } from './ingest'
 import {
   AppSettings,
   EngineState,
@@ -50,6 +51,22 @@ export const rpcContract = {
 
   'engine.ping': m(none, EnginePing),
 
+  /** Start importing dropped or picked files and folders into a project. Returns at once; work runs in the engine. */
+  'import.add': m(z.object({ id: ProjectId, paths: z.array(z.string().min(1)).min(1).max(100_000) }), ImportProgress),
+  'import.pause': m(z.object({ id: ProjectId }), ImportProgress),
+  'import.resume': m(z.object({ id: ProjectId }), ImportProgress),
+  'import.cancel': m(z.object({ id: ProjectId }), ImportProgress),
+  'import.retry': m(z.object({ id: ProjectId, issueIds: z.array(z.number().int()).optional() }), ImportProgress),
+  'import.status': m(z.object({ id: ProjectId }), ImportStatus),
+  'photos.list': m(
+    z.object({ id: ProjectId, offset: z.number().int().nonnegative().default(0), limit: z.number().int().positive().max(5000).default(5000) }),
+    z.array(PhotoSummary)
+  ),
+  /** Native file/folder pickers for Add photos / Add folder. Resolve to absolute paths (empty when cancelled). */
+  'import.pickFiles': m(none, z.array(z.string())),
+  'import.pickFolder': m(none, z.array(z.string())),
+
+
   'updates.status': m(none, UpdateStatus),
   /** Check now (downloads right away when automatic updates are on). */
   'updates.check': m(none, UpdateStatus),
@@ -90,7 +107,13 @@ export type MainEvent = z.infer<typeof MainEvent>
  * thumbnail events here.
  */
 export const EngineEvent = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('engine.heartbeat'), uptimeMs: z.number() })
+  z.object({ type: z.literal('engine.heartbeat'), uptimeMs: z.number() }),
+  /** Progress of a project's import queue (throttled by the batcher). */
+  z.object({ type: z.literal('import.progress'), progress: ImportProgress }),
+  /** Photos that finished importing (or got a new derivative). */
+  z.object({ type: z.literal('import.photos'), projectId: ProjectId, photos: z.array(PhotoSummary) }),
+  /** A file that could not be imported. */
+  z.object({ type: z.literal('import.issue'), projectId: ProjectId, issue: ImportIssue })
 ])
 export type EngineEvent = z.infer<typeof EngineEvent>
 export const EngineEventBatch = z.array(EngineEvent)

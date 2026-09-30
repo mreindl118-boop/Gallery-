@@ -8,6 +8,7 @@ import type { MessagePortMain } from 'electron'
 import { EventBatcher } from '@shared/batcher'
 import { EngineRequest, ENGINE_ATTACH_PORT, type EngineMessage } from '@shared/engine-protocol'
 import type { EngineEvent } from '@shared/rpc'
+import { createIngest } from './ingest'
 
 const VERSION = '0.1.0'
 const started = Date.now()
@@ -28,6 +29,7 @@ type Handler = (params: unknown) => unknown
 const handlers: Record<string, Handler> = {
   ping: () => ({ pid: process.pid, uptimeMs: Date.now() - started, version: VERSION })
 }
+for (const [name, fn] of Object.entries(createIngest(broadcast))) handlers[`ingest.${name}`] = fn
 
 parent.on('message', (e: { data: unknown; ports: MessagePortMain[] }) => {
   const data = e.data as { kind?: string }

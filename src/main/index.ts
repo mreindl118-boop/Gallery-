@@ -34,7 +34,34 @@ async function main(): Promise<void> {
     }
   }
 
-  const engine = new EngineHost((state) => emit({ type: 'engine.state', state }))
+  const engine = new EngineHost((state) => {
+    emit({ type: 'engine.state', state })
+    // After every (re)start, pick up imports that were interrupted (quit, crash, power loss).
+    if (state === 'ready') void resumeImports()
+  })
+
+  async function resumeImports(): Promise<void> {
+    await host.settled()
+    const lib = host.library
+    if (!lib) return
+    const projects = lib.list().flatMap((p) => {
+      const root = lib.projectRoot(p.id)
+      return root ? [{ projectId: p.id, root }] : []
+    })
+    if (projects.length) await engine.request('ingest.resumeAll', { projects }).catch(() => undefined)
+  }
+
+  /** The project's folder, resolved by main from the Library, never taken from the renderer. */
+  const projectRootFor = async (id: string): Promise<string> => {
+    const root = (await requireLibrary()).projectRoot(id)
+    if (!root) throw new GalleryError('not-found', 'That project is no longer in the Library.')
+    return root
+  }
+
+  const ingest = async <T>(method: string, id: string, extra: Record<string, unknown> = {}): Promise<T> =>
+    engine.request<T>(`ingest.${method}`, { projectId: id, root: await projectRootFor(id), ...extra }, 120_000)
+
+  const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'tif', 'tiff', 'heic', 'heif', 'dng', 'cr2', 'cr3', 'nef', 'arw', 'raf', 'orf', 'rw2']
 
   const host = new LibraryHost({
     trash: (p) => shell.trashItem(p),
@@ -129,6 +156,7 @@ async function main(): Promise<void> {
           throw new GalleryError(`library-${result.problem}`, libraryProblemMessage(result.problem, path))
         }
         await settings.update({ libraryPath: path })
+        void resumeImports()
         const status = await libraryStatus()
         emit({ type: 'library.status', status })
         return afterChange(status)
@@ -149,6 +177,35 @@ async function main(): Promise<void> {
         shell.showItemInFolder(join(root, 'project.json'))
       },
       'engine.ping': () => engine.request('ping'),
+      'import.add': ({ id, paths }) => ingest('add', id, { paths }),
+      'import.pause': ({ id }) => ingest('pause', id),
+      'import.resume': ({ id }) => ingest('resume', id),
+      'import.cancel': ({ id }) => ingest('cancel', id),
+      'import.retry': ({ id, issueIds }) => ingest('retry', id, issueIds ? { issueIds } : {}),
+      'import.status': ({ id }) => ingest('status', id),
+      'photos.list': ({ id, offset, limit }) => ingest('photos', id, { offset, limit }),
+      'import.pickFiles': async () => {
+        const opts: Electron.OpenDialogOptions = {
+          title: 'Add photos',
+          buttonLabel: 'Add',
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            { name: 'Photos', extensions: IMAGE_EXTENSIONS },
+            { name: 'All files', extensions: ['*'] }
+          ]
+        }
+        const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+        return res.canceled ? [] : res.filePaths
+      },
+      'import.pickFolder': async () => {
+        const opts: Electron.OpenDialogOptions = {
+          title: 'Add a folder of photos',
+          buttonLabel: 'Add folder',
+          properties: ['openDirectory', 'multiSelections']
+        }
+        const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+        return res.canceled ? [] : res.filePaths
+      },
       'updates.status': () => updates.get(),
       'updates.check': () => updates.check(),
       'updates.download': () => updates.download(),

@@ -48,7 +48,11 @@ export function handleGalleryScheme(projectRoot: (id: string) => string | null):
       })
       const headers = new Headers(upstream.headers)
       for (const [k, v] of Object.entries(CORS)) headers.set(k, v)
-      headers.set('Cache-Control', 'no-cache')
+      // Derivatives are named by content hash, so they never change; everything else may.
+      headers.set(
+        'Cache-Control',
+        url.pathname.startsWith('/.gallery/derivatives/') ? 'public, max-age=31536000, immutable' : 'no-cache'
+      )
       return new Response(upstream.body, { status: upstream.status, headers })
     } catch {
       return deny(404)
