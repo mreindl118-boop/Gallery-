@@ -148,6 +148,8 @@ try {
   Start-Process -FilePath (Join-Path $OldDist "galleryLAB-$OldVersion-setup.exe") -ArgumentList '/S', "/D=$dir1b" -Wait
   $exe1b = Join-Path $dir1b 'galleryLAB.exe'
   Assert ((Get-Version $exe1b) -like "$OldCore*") "old build installed into $dir1b"
+  # Part 1's relaunched build was stopped before it could clear its own waiting-update record.
+  Remove-Item -LiteralPath (Join-Path $userData 'pending-update.json') -Force -ErrorAction SilentlyContinue
   Remove-Item Env:GALLERYLAB_UPDATE_AUTO_APPLY -ErrorAction SilentlyContinue
   $env:GALLERYLAB_UPDATE_QUIT_AFTER_DOWNLOAD = '1'
   $p = Start-Process -FilePath $exe1b -PassThru
