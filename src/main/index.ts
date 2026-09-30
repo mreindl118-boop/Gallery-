@@ -61,7 +61,25 @@ async function main(): Promise<void> {
   const ingest = async <T>(method: string, id: string, extra: Record<string, unknown> = {}): Promise<T> =>
     engine.request<T>(`ingest.${method}`, { projectId: id, root: await projectRootFor(id), ...extra }, 120_000)
 
-  const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'tif', 'tiff', 'heic', 'heif', 'dng', 'cr2', 'cr3', 'nef', 'arw', 'raf', 'orf', 'rw2']
+  const IMAGE_EXTENSIONS = [
+    'jpg',
+    'jpeg',
+    'png',
+    'webp',
+    'avif',
+    'tif',
+    'tiff',
+    'heic',
+    'heif',
+    'dng',
+    'cr2',
+    'cr3',
+    'nef',
+    'arw',
+    'raf',
+    'orf',
+    'rw2'
+  ]
 
   const host = new LibraryHost({
     trash: (p) => shell.trashItem(p),

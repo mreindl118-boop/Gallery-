@@ -59,13 +59,16 @@ export const rpcContract = {
   'import.retry': m(z.object({ id: ProjectId, issueIds: z.array(z.number().int()).optional() }), ImportProgress),
   'import.status': m(z.object({ id: ProjectId }), ImportStatus),
   'photos.list': m(
-    z.object({ id: ProjectId, offset: z.number().int().nonnegative().default(0), limit: z.number().int().positive().max(5000).default(5000) }),
+    z.object({
+      id: ProjectId,
+      offset: z.number().int().nonnegative().default(0),
+      limit: z.number().int().positive().max(5000).default(5000)
+    }),
     z.array(PhotoSummary)
   ),
   /** Native file/folder pickers for Add photos / Add folder. Resolve to absolute paths (empty when cancelled). */
   'import.pickFiles': m(none, z.array(z.string())),
   'import.pickFolder': m(none, z.array(z.string())),
-
 
   'updates.status': m(none, UpdateStatus),
   /** Check now (downloads right away when automatic updates are on). */
