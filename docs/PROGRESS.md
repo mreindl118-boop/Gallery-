@@ -47,30 +47,37 @@ QA log (M0):
 - [x] Automatic updates (0.1.1): installer via electron-updater pinned to its install folder; portable replaces itself at the same path; Settings → Updates
 - [ ] Windows CI update-in-place test green (installer auto-update into custom folder, manual upgrade, portable)
 - [ ] Owner setup: make `mreindl118-boop/Gallery-` public (the release workflow checks)
-- [ ] 0.1.1 published to Gallery- Releases
+- [x] 0.1.1, 0.1.2 published; 0.2.0 (photo import) released from CI-green commit 4aacdf8
 
 ## M1 Ingest at scale
 
-- [ ] Import modes: copy (default) and reference; free-space check, suggest Reference above 20% of free space, stop cleanly on disk full
-- [ ] Discover (streamed walk), identify by magic bytes, streaming hash, duplicates skipped and reported
-- [ ] Store into `originals/` preserving subfolders (temp → rename); reference mode records path + hash; Relink by hash
-- [ ] Metadata via exiftool-vendored pool, incl. XMP sidecars
-- [ ] Derivatives via sharp (LQIP 32, thumb 512, display 2048, focus 4096 WebP, sRGB, oriented, stripped); lazy DZI > 24 MP
-- [ ] HEIC via heic-decode; RAW via largest embedded preview
-- [ ] SQLite (WAL) job queue; idempotent stages keyed by content hash; resume after force-quit
-- [ ] Separate I/O and CPU pools, megapixel-weighted semaphore, configurable `limitInputPixels` (default 1 GP)
-- [ ] Pause, resume, cancel; taskbar progress; Library card progress
-- [ ] Bursts/near-duplicates via perceptual hash + capture-time proximity
-- [ ] Import view: virtualized contact sheet (LQIP first), one progress line, Issues list with reasons and Retry
+Shipped in 0.2.0: open a project, drop photos or folders, import starts at once.
+
+- [x] Import mode copy (default); free-space check stops the queue cleanly on a nearly full disk
+- [ ] Reference-in-place mode; suggest Reference above 20% of free space; Relink by hash
+- [x] Discover (streamed walk), identify by magic bytes, streaming hash (xxHash128), duplicates skipped and reported
+- [x] Store into `originals/` preserving subfolders (temp → rename, collision-safe); originals never modified
+- [x] Metadata via exifr (capture time, camera, lens, exposure, GPS, orientation, rating, title, caption, keywords)
+- [ ] `.xmp` sidecars read (currently skipped silently)
+- [x] Derivatives via sharp (LQIP 32 data URL, thumb 512, display 2048 WebP; sRGB, oriented, stripped); thumbnail first
+- [ ] Focus 4096 derivative; lazy DZI tiles > 24 MP
+- [x] HEIC via heic-decode
+- [ ] RAW via largest embedded preview (RAW is recognised and reported as unsupported for now)
+- [x] SQLite (node:sqlite, WAL, versioned) job queue; idempotent stages keyed by hash; resume after force-quit
+- [x] Decode pool gated by megapixels; `limitInputPixels` 1 GP; small sharp cache; `sequentialRead`
+- [x] Pause, resume, cancel (keeps finished work), retry; Library card progress
+- [ ] Windows taskbar progress (`setProgressBar`)
+- [ ] Bursts/near-duplicates (perceptual hash + capture time)
+- [x] Import view: virtualized contact sheet (LQIP first), one progress line, Issues list with reasons and Retry
 - [ ] Repair project rebuilds `.gallery/`
 - [ ] `npm run fixtures` (§15)
 - [ ] **Accept:** a 10,000-file / 50 GB fixture drop imports without a crash
 - [ ] **Accept:** renderer has no long tasks over 50 ms throughout
 - [ ] **Accept:** engine memory stays under 2.5 GB
-- [ ] **Accept:** force-quit mid-import and relaunch resumes with no duplicates
-- [ ] **Accept:** a 1 GB TIFF and the 40,000 px panorama process
-- [ ] **Accept:** duplicates and bad files reported correctly
-- [ ] **Accept:** first thumbnails appear within about 2 s
+- [x] **Accept:** force-quit mid-import and relaunch resumes with no duplicates (engine tests)
+- [ ] **Accept:** a 1 GB TIFF and the 40,000 px panorama process (a 12,000 px panorama is tested)
+- [x] **Accept:** duplicates and bad files reported correctly
+- [x] **Accept:** first thumbnails appear within about 2 s
 
 ## M2 Reading
 
