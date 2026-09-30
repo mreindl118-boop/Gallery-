@@ -1,18 +1,21 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { app, net } from 'electron'
 import { NsisUpdater } from 'electron-updater'
-import { compareVersions, portableFeedUrls } from '@shared/release'
+import { compareVersions, portableFeedUrls, type PortableFeed } from '@shared/release'
 import type { UpdateStatus } from '@shared/schemas'
+import { updateLog } from './log'
 import {
   canWriteBeside,
   cleanupLeftovers,
   downloadVerified,
   fetchFeed,
+  hasReadyUpdate,
+  HELPER_SCRIPT,
+  helperEnv,
   readyVersion,
-  sidecars,
-  swapInPlace,
   type FetchLike
 } from './portable-core'
 
@@ -80,7 +83,11 @@ export class UpdateController {
 
   async start(): Promise<void> {
     if (!this.backend) return
-    await this.backend.init().catch((err) => console.warn('[updates] init failed', err))
+    updateLog(
+      'info',
+      `start: ${this.status.kind} ${this.status.current}, auto ${this.status.auto}, exe ${app.getPath('exe')}`
+    )
+    await this.backend.init().catch((err) => updateLog('warn', 'init failed', err))
     this.backend.setAutoDownload(this.status.auto)
     this.schedule()
   }
@@ -131,7 +138,7 @@ export class UpdateController {
     try {
       this.backend?.onQuit()
     } catch (err) {
-      console.error('[updates] install on quit failed', err)
+      updateLog('error', 'install on quit failed', err)
     }
   }
 }
@@ -168,9 +175,9 @@ class InstallerBackend implements Backend {
   async init(): Promise<void> {
     const u = new NsisUpdater()
     u.logger = {
-      info: (m: unknown) => console.log('[updates]', m),
-      warn: (m: unknown) => console.warn('[updates]', m),
-      error: (m: unknown) => console.error('[updates]', m),
+      info: (m: unknown) => updateLog('info', m),
+      warn: (m: unknown) => updateLog('warn', m),
+      error: (m: unknown) => updateLog('error', m),
       debug: () => undefined
     }
     u.autoInstallOnAppQuit = true
@@ -196,7 +203,7 @@ class InstallerBackend implements Backend {
       this.patch({ phase: 'ready', version: info.version, percent: 100, message: null })
     )
     u.on('error', (err) => {
-      console.error('[updates] error', err)
+      updateLog('error', 'electron-updater', err)
       const downloading = this.version !== null
       this.patch({
         phase: downloading ? 'available' : 'error',
@@ -244,7 +251,8 @@ class InstallerBackend implements Backend {
 class PortableBackend implements Backend {
   readonly kind = 'portable' as const
   private autoDownload = true
-  private pending: { version: string; file: string; size: number; sha512: string; releaseDate: string } | null = null
+  private handedOff = false
+  private pending: PortableFeed | null = null
   private readonly fetchFn: FetchLike = (url) => net.fetch(url, { headers: { 'Cache-Control': 'no-cache' } })
 
   constructor(
@@ -254,29 +262,20 @@ class PortableBackend implements Backend {
   ) {}
 
   async init(): Promise<void> {
-    await cleanupLeftovers(this.exePath)
-    this.retryCleanup(40)
+    await cleanupLeftovers(this.exePath, app.getVersion())
     const waiting = await readyVersion(this.exePath)
     if (waiting && compareVersions(waiting, app.getVersion()) > 0) {
+      updateLog('info', `update ${waiting} is waiting beside ${this.exePath}`)
       this.patch({ phase: 'ready', version: waiting, percent: 100 })
     }
-  }
-
-  /**
-   * Right after a self-update the previous build's launcher may still be
-   * finishing its own cleanup and holding its file; retry for a while.
-   */
-  private retryCleanup(triesLeft: number): void {
-    if (triesLeft <= 0 || !existsSync(sidecars(this.exePath).old)) return
-    setTimeout(() => {
-      void cleanupLeftovers(this.exePath).finally(() => this.retryCleanup(triesLeft - 1))
-    }, 3000).unref?.()
   }
 
   async check(): Promise<void> {
     this.patch({ phase: 'checking', message: null })
     try {
-      const feed = await fetchFeed(this.fetchFn, portableFeedUrls(this.feed).feed)
+      const url = portableFeedUrls(this.feed).feed
+      const feed = await fetchFeed(this.fetchFn, url)
+      updateLog('info', `portable feed ${url}: ${feed.version} (running ${app.getVersion()})`)
       if (compareVersions(feed.version, app.getVersion()) <= 0) {
         this.pending = null
         this.patch({ phase: 'up-to-date', version: null, percent: null, lastChecked: nowIso() })
@@ -290,7 +289,7 @@ class PortableBackend implements Backend {
       this.patch({ phase: 'available', version: feed.version, lastChecked: nowIso() })
       if (this.autoDownload) await this.download()
     } catch (err) {
-      console.error('[updates] portable check failed', err)
+      updateLog('error', 'portable check failed', err)
       this.patch({ phase: 'error', message: OFFLINE_MESSAGE, lastChecked: nowIso() })
     }
   }
@@ -299,6 +298,7 @@ class PortableBackend implements Backend {
     const feed = this.pending
     if (!feed) return
     if (!(await canWriteBeside(this.exePath))) {
+      updateLog('warn', `cannot write beside ${this.exePath}`)
       this.patch({
         phase: 'error',
         message: `galleryLAB can’t update itself in ${dirname(this.exePath)} because that folder can’t be changed. Move galleryLAB to a folder you can write to, or download the new version from the releases page.`
@@ -311,37 +311,52 @@ class PortableBackend implements Backend {
       await downloadVerified(this.fetchFn, url, feed, this.exePath, (percent) =>
         this.patch({ phase: 'downloading', percent })
       )
+      updateLog('info', `downloaded and verified ${feed.file} ${feed.version}`)
       this.patch({ phase: 'ready', version: feed.version, percent: 100 })
     } catch (err) {
-      console.error('[updates] portable download failed', err)
+      updateLog('error', 'portable download failed', err)
       this.patch({ phase: 'available', percent: null, message: DOWNLOAD_MESSAGE })
     }
   }
 
   install(): void {
-    if (!swapInPlace(this.exePath)) {
+    if (this.handedOff) return
+    if (!this.startHelper(true)) {
       this.patch({
         phase: 'error',
-        message: 'galleryLAB couldn’t replace itself. Close any other copies of galleryLAB and try again.'
+        message: 'galleryLAB couldn’t start its updater. Quit galleryLAB and open it again to try once more.'
       })
       return
     }
-    // Start the new build once this process has exited and released the single-instance lock.
-    const env: NodeJS.ProcessEnv = { ...process.env, GALLERYLAB_WAIT_FOR_PID: String(process.pid) }
-    delete env['PORTABLE_EXECUTABLE_FILE']
-    delete env['PORTABLE_EXECUTABLE_DIR']
-    delete env['PORTABLE_EXECUTABLE_APP_FILENAME']
+    app.quit()
+  }
+
+  /**
+   * Hand the verified update to a helper that moves it onto the exe's path
+   * once galleryLAB and its launcher have exited, then optionally starts it.
+   */
+  private startHelper(relaunch: boolean): boolean {
+    if (!hasReadyUpdate(this.exePath)) return false
     try {
-      spawn(this.exePath, [], {
-        detached: true,
-        stdio: 'ignore',
+      const script = join(tmpdir(), `galleryLAB-update-${process.pid}.cmd`)
+      writeFileSync(script, HELPER_SCRIPT, 'ascii')
+      const env: NodeJS.ProcessEnv = { ...process.env, ...helperEnv(this.exePath, process.pid, relaunch) }
+      delete env['PORTABLE_EXECUTABLE_FILE']
+      delete env['PORTABLE_EXECUTABLE_DIR']
+      delete env['PORTABLE_EXECUTABLE_APP_FILENAME']
+      spawn(process.env['ComSpec'] ?? 'cmd.exe', ['/d', '/c', script], {
         env,
+        stdio: 'ignore',
+        windowsHide: true,
         cwd: dirname(this.exePath)
       }).unref()
+      this.handedOff = true
+      updateLog('info', `helper started (relaunch ${relaunch}) for ${this.exePath}`)
+      return true
     } catch (err) {
-      console.error('[updates] relaunch failed', err)
+      updateLog('error', 'could not start the update helper', err)
+      return false
     }
-    app.quit()
   }
 
   setAutoDownload(on: boolean): void {
@@ -349,7 +364,8 @@ class PortableBackend implements Backend {
   }
 
   onQuit(): void {
-    swapInPlace(this.exePath)
+    // Install on quit: the helper finishes the move after we exit, without relaunching.
+    if (!this.handedOff) this.startHelper(false)
   }
 }
 

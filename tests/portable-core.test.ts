@@ -9,9 +9,11 @@ import {
   cleanupLeftovers,
   downloadVerified,
   fetchFeed,
+  hasReadyUpdate,
+  HELPER_SCRIPT,
+  helperEnv,
   readyVersion,
-  sidecars,
-  swapInPlace
+  sidecars
 } from '../src/main/updates/portable-core'
 
 const NEW_BUILD = Buffer.alloc(3 * 1024 * 1024, 7)
@@ -57,22 +59,16 @@ beforeEach(() => {
 })
 
 describe('portable self-update', () => {
-  it('downloads, verifies and swaps the new build in at the same path', async () => {
+  it('downloads and verifies the new build beside the exe without touching the exe', async () => {
     const feed = await fetchFeed(fetch, `${base}/latest-portable.json`)
     const progress: number[] = []
     await downloadVerified(fetch, `${base}/${feed.file}`, feed, exe, (p) => progress.push(p))
     expect(progress.at(-1)).toBe(100)
-    expect(readFileSync(exe, 'utf8')).toBe('old build') // untouched until the swap
+    expect(readFileSync(exe, 'utf8')).toBe('old build')
+    expect(readFileSync(sidecars(exe).ready).equals(NEW_BUILD)).toBe(true)
+    expect(hasReadyUpdate(exe)).toBe(true)
     expect(await readyVersion(exe)).toBe('0.2.0')
-
-    expect(swapInPlace(exe)).toBe(true)
-    expect(readFileSync(exe).equals(NEW_BUILD)).toBe(true)
-    expect(readFileSync(sidecars(exe).old, 'utf8')).toBe('old build')
-    expect(await readyVersion(exe)).toBeNull()
-
-    await cleanupLeftovers(exe)
-    expect(existsSync(sidecars(exe).old)).toBe(false)
-    expect(readFileSync(exe).equals(NEW_BUILD)).toBe(true)
+    expect(existsSync(sidecars(exe).partial)).toBe(false)
   })
 
   it('rejects a download whose checksum does not match and leaves no files behind', async () => {
@@ -90,23 +86,59 @@ describe('portable self-update', () => {
   it('rejects a truncated download', async () => {
     const feed = await fetchFeed(fetch, `${base}/latest-portable.json`)
     await expect(downloadVerified(fetch, `${base}/truncated.exe`, feed, exe, () => undefined)).rejects.toThrow(/bytes/)
-    expect(existsSync(sidecars(exe).ready)).toBe(false)
+    expect(hasReadyUpdate(exe)).toBe(false)
   })
 
-  it('does nothing when no verified update is waiting', () => {
-    expect(swapInPlace(exe)).toBe(false)
+  it('keeps a newer waiting update at startup and drops stale ones and partial downloads', async () => {
+    const feed = await fetchFeed(fetch, `${base}/latest-portable.json`)
+    await downloadVerified(fetch, `${base}/${feed.file}`, feed, exe, () => undefined)
+    writeFileSync(sidecars(exe).partial, 'half')
+
+    await cleanupLeftovers(exe, '0.1.1')
+    expect(existsSync(sidecars(exe).partial)).toBe(false)
+    expect(await readyVersion(exe)).toBe('0.2.0') // still newer than 0.1.1: kept for install
+
+    await cleanupLeftovers(exe, '0.2.0') // already running 0.2.0: the waiting copy is stale
+    expect(hasReadyUpdate(exe)).toBe(false)
+    expect(existsSync(sidecars(exe).readyMeta)).toBe(false)
     expect(readFileSync(exe, 'utf8')).toBe('old build')
   })
 
-  it('restores the previous build if a swap was interrupted between its renames', async () => {
-    const s = sidecars(exe)
-    rmSync(exe)
-    writeFileSync(s.old, 'old build')
-    await cleanupLeftovers(exe)
-    expect(readFileSync(exe, 'utf8')).toBe('old build')
+  it('drops a ready file with no version record', async () => {
+    writeFileSync(sidecars(exe).ready, 'orphan')
+    await cleanupLeftovers(exe, '0.1.1')
+    expect(hasReadyUpdate(exe)).toBe(false)
   })
 
   it('fails cleanly on a missing feed', async () => {
     await expect(fetchFeed(fetch, `${base}/nope.json`)).rejects.toThrow(/404/)
+  })
+})
+
+describe('portable update helper', () => {
+  it('is plain ASCII with CRLF line endings and no paths of its own', () => {
+    // cmd.exe reads batch files in the OEM code page; ASCII keeps it safe for any user name.
+    expect([...HELPER_SCRIPT].every((c) => c.charCodeAt(0) < 128)).toBe(true)
+    expect(HELPER_SCRIPT.split('\r\n').length).toBeGreaterThan(10)
+    expect(HELPER_SCRIPT.replace(/\r\n/g, '')).not.toMatch(/\n/)
+    expect(HELPER_SCRIPT).not.toMatch(/[A-Za-z]:\\/)
+    expect(HELPER_SCRIPT).toMatch(/DisableDelayedExpansion/)
+    // Every path is quoted and comes from the environment.
+    for (const v of ['GLAB_READY', 'GLAB_EXE', 'GLAB_READY_META']) expect(HELPER_SCRIPT).toContain(`"%${v}%"`)
+    expect(HELPER_SCRIPT).toMatch(/move \/y "%GLAB_READY%" "%GLAB_EXE%"/)
+    expect(HELPER_SCRIPT).toMatch(/if "%GLAB_RELAUNCH%"=="1" start "" "%GLAB_EXE%"/)
+  })
+
+  it('passes the exact exe path and its sidecars through the environment', () => {
+    const odd = join(dir, 'Pfad mit Ümlaut & 100% (x)', 'galleryLAB-0.1.1-portable.exe')
+    const env = helperEnv(odd, 4242, true)
+    expect(env).toEqual({
+      GLAB_APP_PID: '4242',
+      GLAB_READY: `${odd}.update`,
+      GLAB_READY_META: `${odd}.update.json`,
+      GLAB_EXE: odd,
+      GLAB_RELAUNCH: '1'
+    })
+    expect(helperEnv(odd, 1, false).GLAB_RELAUNCH).toBe('0')
   })
 })

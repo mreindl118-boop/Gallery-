@@ -1,32 +1,33 @@
 import { createHash } from 'node:crypto'
-import { createWriteStream, promises as fs, renameSync, rmSync, existsSync } from 'node:fs'
+import { createWriteStream, existsSync, promises as fs } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
-import { PortableFeed, type PortableFeed as Feed } from '@shared/release'
+import { compareVersions, PortableFeed, type PortableFeed as Feed } from '@shared/release'
 
 /**
  * The portable build updates itself in place: the new exe is downloaded next
- * to the running one, verified, and swapped in at exactly the same path, so
- * shortcuts, pins and the folder the user keeps it in all stay valid.
+ * to the running one and verified, then a small helper moves it onto exactly
+ * the same path once galleryLAB has quit, so shortcuts, pins and the folder
+ * the user keeps it in all stay valid.
  *
- * Windows lets a running executable be renamed (not overwritten or deleted),
- * which is what makes the swap possible while the portable launcher is still
- * running. Electron-free so it can be tested with plain Node.
+ * The move can't happen while galleryLAB runs: the portable launcher keeps
+ * its own exe open (without delete sharing) to read the packed app. The helper
+ * therefore waits for galleryLAB to exit, then retries the move until the
+ * launcher has let go. Electron-free so it can be tested with plain Node.
  */
 
 export type FetchLike = (url: string) => Promise<Response>
 
-/** Sidecar file names, all in the exe's own folder so every rename stays on one volume. */
+/** Sidecar file names, in the exe's own folder so the final move stays on one volume. */
 export function sidecars(exePath: string) {
   const dir = dirname(exePath)
   const name = basename(exePath)
   return {
     partial: join(dir, `${name}.update-partial`),
     ready: join(dir, `${name}.update`),
-    readyMeta: join(dir, `${name}.update.json`),
-    old: join(dir, `${name}.old`)
+    readyMeta: join(dir, `${name}.update.json`)
   }
 }
 
@@ -110,53 +111,72 @@ export async function readyVersion(exePath: string): Promise<string | null> {
 }
 
 /**
- * Swap the verified update into place. Synchronous so it can run inside
- * `will-quit`. Order: running exe → .old, ready → exe path. If the second
- * rename fails the first is undone, so the exe path always holds a working
- * build. Returns true when the new build is in place.
+ * Tidy up at startup: drop partial downloads, and a ready update that is not
+ * newer than the running build (already applied, or left over from a
+ * downgrade). A newer ready update is kept so it can be installed.
  */
-export function swapInPlace(exePath: string): boolean {
-  const { ready, readyMeta, old } = sidecars(exePath)
-  if (!existsSync(ready)) return false
-  try {
-    rmSync(old, { force: true })
-  } catch {
-    // A previous .old still held by an exiting launcher; the rename below will fail and we retry next quit.
+export async function cleanupLeftovers(exePath: string, currentVersion: string): Promise<void> {
+  const { partial, ready, readyMeta } = sidecars(exePath)
+  await fs.rm(partial, { force: true }).catch(() => undefined)
+  const waiting = await readyVersion(exePath)
+  if (waiting === null || compareVersions(waiting, currentVersion) <= 0) {
+    await fs.rm(ready, { force: true }).catch(() => undefined)
+    await fs.rm(readyMeta, { force: true }).catch(() => undefined)
   }
-  try {
-    renameSync(exePath, old)
-  } catch {
-    return false
-  }
-  try {
-    renameSync(ready, exePath)
-  } catch {
-    try {
-      renameSync(old, exePath)
-    } catch {
-      // Leave .old in place; cleanupLeftovers restores it on the next launch.
-    }
-    return false
-  }
-  try {
-    rmSync(readyMeta, { force: true })
-  } catch {
-    // Harmless: readyVersion also requires the ready file.
-  }
-  return true
 }
 
 /**
- * Tidy up after an earlier update: remove the previous build (.old) once
- * nothing holds it, and stale partial downloads. If the exe itself is missing
- * but .old exists (a swap interrupted between its two renames), restore it.
+ * The helper that finishes a portable update after galleryLAB quits. It is
+ * run by cmd.exe with every path passed through the environment, so the
+ * script itself is plain ASCII and paths with spaces, non-Latin letters or
+ * characters like & and % are safe.
+ *
+ *   GLAB_APP_PID     galleryLAB's main process, waited for first
+ *   GLAB_READY       the verified new exe
+ *   GLAB_READY_META  its version file, removed once the move succeeds
+ *   GLAB_EXE         the path to replace (the exe the user runs)
+ *   GLAB_RELAUNCH    1 to start the new build afterwards
  */
-export async function cleanupLeftovers(exePath: string): Promise<void> {
-  const { partial, old } = sidecars(exePath)
-  if (!existsSync(exePath) && existsSync(old)) {
-    await fs.rename(old, exePath).catch(() => undefined)
-    return
+export const HELPER_SCRIPT = [
+  '@echo off',
+  'setlocal EnableExtensions DisableDelayedExpansion',
+  'rem galleryLAB portable update helper (paths come from the environment)',
+  'set /a GLAB_WAITS=0',
+  ':waitapp',
+  'tasklist /FI "PID eq %GLAB_APP_PID%" /NH 2>nul | find " %GLAB_APP_PID% " >nul',
+  'if errorlevel 1 goto swap',
+  'set /a GLAB_WAITS+=1',
+  'if %GLAB_WAITS% geq 120 goto swap',
+  'ping -n 2 127.0.0.1 >nul',
+  'goto waitapp',
+  ':swap',
+  'set /a GLAB_TRIES=0',
+  ':tryswap',
+  'rem once the verified download is gone from beside the exe, the move has happened',
+  'if not exist "%GLAB_READY%" goto moved',
+  'move /y "%GLAB_READY%" "%GLAB_EXE%" >nul 2>&1',
+  'if not errorlevel 1 goto moved',
+  'set /a GLAB_TRIES+=1',
+  'if %GLAB_TRIES% geq 120 goto done',
+  'ping -n 2 127.0.0.1 >nul',
+  'goto tryswap',
+  ':moved',
+  'del /f /q "%GLAB_READY_META%" >nul 2>&1',
+  'if "%GLAB_RELAUNCH%"=="1" start "" "%GLAB_EXE%"',
+  ':done',
+  '(goto) 2>nul & del /f /q "%~f0"',
+  ''
+].join('\r\n')
+
+export function helperEnv(exePath: string, appPid: number, relaunch: boolean): Record<string, string> {
+  const { ready, readyMeta } = sidecars(exePath)
+  return {
+    GLAB_APP_PID: String(appPid),
+    GLAB_READY: ready,
+    GLAB_READY_META: readyMeta,
+    GLAB_EXE: exePath,
+    GLAB_RELAUNCH: relaunch ? '1' : '0'
   }
-  await fs.rm(partial, { force: true }).catch(() => undefined)
-  await fs.rm(old, { force: true }).catch(() => undefined)
 }
+
+export const hasReadyUpdate = (exePath: string): boolean => existsSync(sidecars(exePath).ready)

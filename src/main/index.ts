@@ -15,31 +15,13 @@ import { applyChromeTheme, createMainWindow, currentTheme, lockDownSession } fro
 if (process.env['GALLERYLAB_USER_DATA']) app.setPath('userData', process.env['GALLERYLAB_USER_DATA'])
 registerGalleryScheme()
 
-// After a portable self-update the new build is started by the old one; wait
-// for the old process to exit so the single-instance lock is free.
-void waitForExit(Number(process.env['GALLERYLAB_WAIT_FOR_PID'])).then(() => {
-  delete process.env['GALLERYLAB_WAIT_FOR_PID']
-  if (!app.requestSingleInstanceLock()) {
-    app.quit()
-  } else {
-    main().catch((err) => {
-      console.error('[main] startup failed', err)
-      app.exit(1)
-    })
-  }
-})
-
-async function waitForExit(pid: number, timeoutMs = 20_000): Promise<void> {
-  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return
-  const until = Date.now() + timeoutMs
-  while (Date.now() < until) {
-    try {
-      process.kill(pid, 0)
-    } catch {
-      return
-    }
-    await new Promise((r) => setTimeout(r, 150))
-  }
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  main().catch((err) => {
+    console.error('[main] startup failed', err)
+    app.exit(1)
+  })
 }
 
 async function main(): Promise<void> {

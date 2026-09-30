@@ -100,8 +100,7 @@ smoke-tests the unpacked build, installs silently and launches, and starts the p
   `GALLERYLAB_EXECUTABLE` (harness launches a packaged build), `GALLERYLAB_HIDDEN` (don't show the window).
   Updates: `GALLERYLAB_UPDATE_FEED` (loopback http or https feed base URL instead of the releases repo),
   `GALLERYLAB_UPDATE_AUTO_APPLY=1` (install as soon as downloaded), `GALLERYLAB_UPDATE_CHECK_DELAY_MS` (first
-  check delay; the e2e harness sets 1 h), `GALLERYLAB_UPDATE_FAKE=1` (scripted backend for UI tests),
-  `GALLERYLAB_WAIT_FOR_PID` (set by the portable updater on relaunch).
+  check delay; the e2e harness sets 1 h), `GALLERYLAB_UPDATE_FAKE=1` (scripted backend for UI tests).
 
 ## Gotchas
 

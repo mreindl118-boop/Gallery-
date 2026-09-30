@@ -85,6 +85,21 @@ function Assert-UserDataKept {
 $port = 8765
 $feed = "http://127.0.0.1:$port/"
 $server = Start-Process -FilePath 'python' -ArgumentList '-m', 'http.server', "$port", '--bind', '127.0.0.1', '--directory', "`"$NewDist`"" -PassThru -WindowStyle Hidden
+function Show-Diagnostics {
+  Write-Host '--- diagnostics'
+  foreach ($d in @($tools, $dir1, $dir2)) {
+    if ($d -and (Test-Path -LiteralPath $d)) {
+      Write-Host "contents of ${d}:"
+      Get-ChildItem -LiteralPath $d -Force | ForEach-Object { Write-Host ("  {0,12}  {1}" -f $_.Length, $_.Name) }
+    }
+  }
+  foreach ($log in @((Join-Path $userData 'logs\updates.log'), (Join-Path $userData 'logs\updates.log.1'))) {
+    if (Test-Path -LiteralPath $log) { Write-Host "${log}:"; Get-Content -LiteralPath $log | ForEach-Object { Write-Host "  $_" } }
+  }
+  Get-Process -Name 'galleryLAB', 'cmd' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host ("process {0} {1} {2}" -f $_.Id, $_.Name, $_.Path) }
+}
+
+$tools = $null; $dir1 = $null; $dir2 = $null
 try {
   Wait-Until { (Invoke-WebRequest -UseBasicParsing "${feed}latest.yml").StatusCode -eq 200 } 30 'feed serves latest.yml'
   Wait-Until { (Invoke-WebRequest -UseBasicParsing "${feed}latest-portable.json").StatusCode -eq 200 } 10 'feed serves latest-portable.json'
@@ -142,7 +157,12 @@ try {
   Wait-Until { @(Get-ChildItem -LiteralPath $tools -Force | Where-Object { $_.Name -ne (Split-Path $portable -Leaf) }).Count -eq 0 } 150 'no leftover update files beside the portable exe'
   Stop-Gallery
   Assert-UserDataKept
+  Show-Diagnostics
   Write-Host 'All update tests passed.'
+}
+catch {
+  Show-Diagnostics
+  throw
 }
 finally {
   Stop-Gallery
