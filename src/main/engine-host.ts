@@ -3,6 +3,7 @@ import { MessageChannelMain, utilityProcess, type UtilityProcess, type WebConten
 import { EngineMessage, ENGINE_ATTACH_PORT, type EngineRequest } from '@shared/engine-protocol'
 import { ENGINE_PORT_CHANNEL, GalleryError } from '@shared/rpc'
 import type { EngineState } from '@shared/schemas'
+import { startupLog } from './startup-log'
 
 interface Pending {
   resolve: (v: unknown) => void
@@ -48,6 +49,7 @@ export class EngineHost {
       if (!parsed.success) return
       const msg = parsed.data
       if (msg.kind === 'ready') {
+        startupLog('engine ready')
         this.setState('ready')
         for (const wc of this.renderers) this.attach(wc)
       } else if (msg.kind === 'response') {
@@ -62,6 +64,7 @@ export class EngineHost {
       }
     })
     child.on('exit', (code) => {
+      startupLog(`engine exited with code ${code}`)
       if (this.child === child) this.child = null
       for (const p of this.pending.values()) {
         clearTimeout(p.timer)

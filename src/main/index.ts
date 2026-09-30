@@ -10,18 +10,24 @@ import { handleGalleryScheme, registerGalleryScheme } from './protocol'
 import { registerRpc } from './rpc'
 import { SettingsStore } from './settings'
 import { UpdateController } from './updates/controller'
+import { fatal, startupLog } from './startup-log'
 import { applyChromeTheme, createMainWindow, currentTheme, lockDownSession } from './window'
 
 if (process.env['GALLERYLAB_USER_DATA']) app.setPath('userData', process.env['GALLERYLAB_USER_DATA'])
+startupLog(
+  `galleryLAB ${app.getVersion()} starting: exe ${app.getPath('exe')}, packaged ${app.isPackaged}, args ${JSON.stringify(process.argv.slice(1))}`
+)
+process.on('uncaughtException', (err) => fatal('main process', err))
+process.on('unhandledRejection', (err) => startupLog('unhandled rejection:', err))
 registerGalleryScheme()
 
 if (!app.requestSingleInstanceLock()) {
+  // Another galleryLAB is already running for this user: it gets a second-instance event and comes to the front.
+  startupLog('another galleryLAB is already running; handing over to it and quitting')
   app.quit()
 } else {
-  main().catch((err) => {
-    console.error('[main] startup failed', err)
-    app.exit(1)
-  })
+  startupLog('single-instance lock acquired')
+  main().catch((err) => fatal('startup', err))
 }
 
 async function main(): Promise<void> {
@@ -122,6 +128,7 @@ async function main(): Promise<void> {
   }
 
   await settings.load()
+  startupLog(`settings loaded from ${app.getPath('userData')}`)
   nativeTheme.themeSource = settings.get().theme
   const updates = new UpdateController(settings.get().autoUpdate, (status) => emit({ type: 'updates.status', status }))
   // Open the saved Library without blocking the window; RPCs wait for it. Never recreate it if it's gone.
@@ -256,6 +263,7 @@ async function main(): Promise<void> {
   )
 
   await app.whenReady()
+  startupLog('app ready')
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   lockDownSession()
   handleGalleryScheme((id) => host.library?.projectRoot(id) ?? null)
@@ -265,7 +273,17 @@ async function main(): Promise<void> {
   const open = (): void => {
     win = createMainWindow()
     const w = win
-    w.webContents.on('did-finish-load', () => engine.connectRenderer(w.webContents))
+    startupLog('window created')
+    w.webContents.on('did-finish-load', () => {
+      startupLog('renderer loaded')
+      engine.connectRenderer(w.webContents)
+    })
+    w.webContents.on('did-fail-load', (_e, code, description, url) =>
+      startupLog(`renderer failed to load ${url}: ${code} ${description}`)
+    )
+    w.webContents.on('render-process-gone', (_e, details) =>
+      startupLog(`renderer process gone: ${details.reason} (exit code ${details.exitCode})`)
+    )
     // Logging off or shutting down: an installer started now would be cut short.
     w.on('session-end', () => updates.onSessionEnd())
     w.on('closed', () => {
