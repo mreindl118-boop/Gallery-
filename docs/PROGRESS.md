@@ -26,7 +26,7 @@ and themes, frameless window, Library empty state, lint/typecheck/test scripts, 
 - [x] Library empty state and project grid (plinth drawing per project, keyboard navigation, F2/Delete, context menu)
 - [x] Scripts: typecheck, lint, format, test, e2e, qa:shots, pack, dist:win
 - [x] Packaging config: NSIS + portable, asarUnpack for sharp/@img/exiftool/better-sqlite3/onnxruntime
-- [ ] **Accept:** installer and portable builds launch on Windows (CI job `windows`; portable cross-built locally)
+- [x] **Accept:** installer and portable builds launch on Windows (CI run 36736464375, job `windows`: NSIS built, silent install + launch smoke test, portable exe started)
 - [x] **Accept:** projects appear, rename and delete on disk (e2e `library.e2e.ts`)
 - [x] **Accept:** theme switching works and persists (e2e)
 - [x] **Accept:** all checks pass (typecheck, lint, format, 26 unit/property tests, 6 e2e tests)

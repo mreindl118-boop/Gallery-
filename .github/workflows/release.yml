@@ -1,0 +1,133 @@
+name: Release
+
+# Builds the Windows installer and portable exe, verifies them on a clean
+# Windows runner, and publishes a GitHub Release with checksums.
+# Start it with a tag push (v0.1.0) or from the Actions tab (workflow_dispatch).
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without the v (must match package.json), e.g. 0.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build, verify and publish (Windows x64)
+    runs-on: windows-latest
+    env:
+      VERSION_INPUT: ${{ github.event.inputs.version }}
+      REF_NAME: ${{ github.ref_name }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Resolve and check the version
+        id: version
+        shell: pwsh
+        run: |
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:EVENT_NAME -eq 'push') { $v = $env:REF_NAME -replace '^v', '' } else { $v = $env:VERSION_INPUT.Trim() -replace '^v', '' }
+          if ($v -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw "Not a version: '$v'" }
+          if ($v -ne $pkg) { throw "Version $v does not match package.json ($pkg). Bump package.json first." }
+          $notes = ".github/release-notes/v$v.md"
+          if (-not (Test-Path $notes)) { throw "Missing release notes: $notes" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "tag=v$v" >> $env:GITHUB_OUTPUT
+          "notes=$notes" >> $env:GITHUB_OUTPUT
+          Write-Host "Releasing v$v from $env:GITHUB_SHA"
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+      - name: Package (NSIS installer + portable)
+        run: npx electron-builder --win nsis portable --x64 --publish never
+
+      - name: Smoke test the unpacked build
+        shell: pwsh
+        run: |
+          $env:GALLERYLAB_EXECUTABLE = (Resolve-Path dist/win-unpacked/galleryLAB.exe).Path
+          npx playwright test smoke
+
+      - name: Install silently, launch the installed app, uninstall
+        shell: pwsh
+        run: |
+          $setup = Get-Item "dist/galleryLAB-${{ steps.version.outputs.version }}-setup.exe"
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $exe = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -Recurse -Filter 'galleryLAB.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { throw 'Installed executable not found under %LOCALAPPDATA%\Programs' }
+          Write-Host "Installed at $exe"
+          $env:GALLERYLAB_EXECUTABLE = $exe
+          npx playwright test smoke
+          $uninstaller = Get-ChildItem (Split-Path $exe) -Filter 'Uninstall*.exe' | Select-Object -First 1
+          if (-not $uninstaller) { throw 'Uninstaller not found next to the installed app' }
+          Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait
+          Start-Sleep -Seconds 5
+          if (Test-Path $exe) { throw 'Uninstall left the app behind' }
+
+      - name: Launch the portable build
+        shell: pwsh
+        run: |
+          $portable = Get-Item "dist/galleryLAB-${{ steps.version.outputs.version }}-portable.exe"
+          $env:GALLERYLAB_USER_DATA = Join-Path $env:RUNNER_TEMP 'portable-ud'
+          $env:GALLERYLAB_HIDDEN = '1'
+          Start-Process -FilePath $portable.FullName
+          $deadline = (Get-Date).AddSeconds(90)
+          do {
+            Start-Sleep -Seconds 3
+            $running = Get-Process -Name 'galleryLAB' -ErrorAction SilentlyContinue
+            $started = Test-Path (Join-Path $env:GALLERYLAB_USER_DATA 'Local State')
+          } until (($running -and $started) -or (Get-Date) -gt $deadline)
+          if (-not ($running -and $started)) { throw 'Portable build did not start' }
+          Get-Process -Name 'galleryLAB' | Stop-Process -Force
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $files = @(
+            "dist/galleryLAB-${{ steps.version.outputs.version }}-setup.exe",
+            "dist/galleryLAB-${{ steps.version.outputs.version }}-portable.exe"
+          )
+          $lines = foreach ($f in $files) { $h = Get-FileHash $f -Algorithm SHA256; "$($h.Hash.ToLower())  $(Split-Path $f -Leaf)" }
+          $lines | Set-Content -Path dist/SHA256SUMS.txt -Encoding ascii
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Publish the GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $v = '${{ steps.version.outputs.version }}'
+          $assets = @("dist/galleryLAB-$v-setup.exe", "dist/galleryLAB-$v-portable.exe", 'dist/SHA256SUMS.txt')
+          $prerelease = @()
+          if ($v -match '-') { $prerelease = @('--prerelease') }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag exists; replacing its assets"
+            gh release upload $tag @assets --clobber
+          } else {
+            gh release create $tag @assets --target $env:GITHUB_SHA --title "galleryLAB $v" --notes-file '${{ steps.version.outputs.notes }}' @prerelease
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing the release failed' }
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: release-e2e-results
+          path: test-results/
