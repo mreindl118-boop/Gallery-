@@ -48,6 +48,9 @@ win:
 nsis:
   oneClick: false
   perMachine: false
+  # Per-user only: no "anyone who uses this computer" choice, no UAC for installs or updates.
+  allowElevation: false
+  include: build/installer.nsh
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true

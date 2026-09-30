@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { app, net } from 'electron'
 import { NsisUpdater } from 'electron-updater'
 import { compareVersions, portableFeedUrls, type PortableFeed } from '@shared/release'
@@ -38,6 +38,8 @@ interface Backend {
   setAutoDownload(on: boolean): void
   /** Called from `will-quit`; must be synchronous. */
   onQuit(): void
+  /** Don't install on this quit (Windows session ending). */
+  postpone(): void
 }
 
 type Patch = (p: Partial<UpdateStatus>) => void
@@ -137,6 +139,12 @@ export class UpdateController {
     return this.status
   }
 
+  /** Windows is logging off or shutting down: don't start an install it would cut short. */
+  onSessionEnd(): void {
+    updateLog('info', 'session ending; postponing any install to the next quit')
+    this.backend?.postpone()
+  }
+
   onQuit(): void {
     try {
       this.backend?.onQuit()
@@ -156,11 +164,37 @@ function testFeed(): string | null {
 function pickBackend(feed: string | null, patch: Patch): Backend | null {
   if (process.env['GALLERYLAB_UPDATE_FAKE'] === '1') return new FakeBackend(patch)
   if (!app.isPackaged || process.platform !== 'win32') return null
-  const portableExe = process.env['PORTABLE_EXECUTABLE_FILE']
+  const portableExe = ownPortableExe()
   if (portableExe) return new PortableBackend(portableExe, feed, patch)
   if (!existsSync(join(process.resourcesPath, 'app-update.yml'))) return null
   return new InstallerBackend(feed, patch)
 }
+
+/**
+ * The portable exe that launched this process, only if it really is our own
+ * portable launcher: the variables are inherited by child processes, so an
+ * installed galleryLAB started from another portable app would otherwise
+ * mistake that app's exe for its own and overwrite it.
+ */
+function ownPortableExe(): string | null {
+  const file = process.env['PORTABLE_EXECUTABLE_FILE']
+  const appName = process.env['PORTABLE_EXECUTABLE_APP_FILENAME']
+  if (!file || appName !== PORTABLE_APP_FILENAME || !/\.exe$/i.test(file) || !existsSync(file)) return null
+  // The portable launcher unpacks galleryLAB into the temp folder and runs it from there.
+  const real = (p: string) => {
+    try {
+      return realpathSync.native(p) // expands 8.3 short names, so TEMP and the exe path compare
+    } catch {
+      return resolve(p)
+    }
+  }
+  const rel = relative(real(app.getPath('temp')).toLowerCase(), real(app.getPath('exe')).toLowerCase())
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return null
+  return file
+}
+
+/** electron-builder's APP_FILENAME for this product (its productFilename). */
+const PORTABLE_APP_FILENAME = 'galleryLAB'
 
 const nowIso = (): string => new Date().toISOString()
 
@@ -187,8 +221,9 @@ class InstallerBackend implements Backend {
     u.allowDowngrade = false
     u.allowPrerelease = false
     u.disableWebInstaller = true
-    // Keep the install exactly where it is, even if the registry points elsewhere.
-    u.installDirectory = dirname(app.getPath('exe'))
+    // No /D: the per-user installer reinstalls into the folder it recorded at install time
+    // (proven by scripts/ci/update-test.ps1). Passing /D= through Node's quoting is unreliable
+    // for folders with spaces.
     if (this.feed) u.setFeedURL({ provider: 'generic', url: this.feed })
 
     u.on('checking-for-update', () => this.patch({ phase: 'checking', message: null }))
@@ -248,6 +283,10 @@ class InstallerBackend implements Backend {
   onQuit(): void {
     // electron-updater installs a downloaded update on quit by itself.
   }
+
+  postpone(): void {
+    if (this.updater) this.updater.autoInstallOnAppQuit = false
+  }
 }
 
 /** Portable build: replace this exe at its own path. */
@@ -256,6 +295,7 @@ class PortableBackend implements Backend {
   private autoDownload = true
   private handedOff = false
   private stuck = false
+  private postponed = false
   private pending: PortableFeed | null = null
   private readonly fetchFn: FetchLike = (url) => net.fetch(url, { headers: { 'Cache-Control': 'no-cache' } })
 
@@ -397,7 +437,11 @@ class PortableBackend implements Backend {
 
   onQuit(): void {
     // Install on quit: the helper finishes the swap after we exit, without relaunching.
-    if (!this.handedOff && !this.stuck) this.startHelper(false)
+    if (!this.handedOff && !this.stuck && !this.postponed) this.startHelper(false)
+  }
+
+  postpone(): void {
+    this.postponed = true
   }
 }
 
@@ -427,6 +471,7 @@ class FakeBackend implements Backend {
     this.auto = on
   }
   onQuit(): void {}
+  postpone(): void {}
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))

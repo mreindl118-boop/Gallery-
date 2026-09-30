@@ -184,6 +184,8 @@ async function main(): Promise<void> {
     win = createMainWindow()
     const w = win
     w.webContents.on('did-finish-load', () => engine.connectRenderer(w.webContents))
+    // Logging off or shutting down: an installer started now would be cut short.
+    w.on('session-end', () => updates.onSessionEnd())
     w.on('closed', () => {
       if (win === w) win = null
     })

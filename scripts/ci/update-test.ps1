@@ -126,7 +126,12 @@ try {
   $entries = @(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | Get-ItemProperty | Where-Object { $_.DisplayName -like 'galleryLAB*' })
   Assert ($entries.Count -eq 1) 'exactly one galleryLAB entry in Apps & features'
   Assert ($entries[0].DisplayVersion -eq $NewVersion) "Apps & features shows $NewVersion"
-  Assert ($entries[0].UninstallString -like "*$dir1*") 'the uninstall entry points at the same folder'
+  $uninstall = [string]$entries[0].UninstallString
+  Write-Host "UninstallString: $uninstall"
+  Assert ($uninstall.StartsWith('"' + $dir1 + '\Uninstall galleryLAB.exe"')) 'the uninstall entry points exactly at the same folder'
+  $locations = @(Get-ChildItem 'HKCU:\Software' -ErrorAction SilentlyContinue | ForEach-Object { (Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue).InstallLocation } | Where-Object { $_ -like '*galleryLAB*' })
+  Write-Host "InstallLocation: $($locations -join ' | ')"
+  Assert ($locations.Count -ge 1 -and ($locations | Where-Object { $_ -ne $dir1 }).Count -eq 0) 'the recorded install location is exactly the same folder'
   Stop-Gallery
   Assert-UserDataKept
   Uninstall-Gallery $dir1
