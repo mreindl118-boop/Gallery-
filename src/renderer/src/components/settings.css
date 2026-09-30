@@ -1,0 +1,67 @@
+.settings-section + .settings-section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--divider);
+}
+
+.settings-heading {
+  font-size: var(--size-14);
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
+
+.settings-note {
+  margin-top: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--size-12);
+}
+
+.settings-path {
+  font-size: var(--size-14);
+  color: var(--text-2);
+  word-break: break-all;
+  margin-bottom: var(--space-3);
+  user-select: text;
+}
+
+.settings-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.settings-facts {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  row-gap: var(--space-1);
+  margin: 0;
+}
+.settings-facts dt {
+  color: var(--text-2);
+}
+.settings-facts dd {
+  margin: 0;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface);
+  border-radius: var(--radius-m);
+}
+
+.segment {
+  height: 28px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.segment[aria-checked='true'] {
+  background: var(--ground);
+  color: var(--text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
+}

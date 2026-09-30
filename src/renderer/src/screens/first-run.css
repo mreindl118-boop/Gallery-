@@ -1,0 +1,46 @@
+.first-run-main {
+  flex: 1;
+  margin-top: var(--titlebar-height);
+  display: grid;
+  grid-template-columns: minmax(320px, 520px) minmax(220px, 400px);
+  align-items: center;
+  align-content: center;
+  gap: var(--space-9);
+  padding: 0 var(--space-8) var(--space-9);
+}
+
+.first-run-title {
+  font-size: var(--size-48);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  margin-bottom: var(--space-5);
+}
+
+.first-run-body {
+  font-size: var(--size-16);
+  color: var(--text-2);
+  max-width: 52ch;
+  margin-bottom: var(--space-6);
+}
+
+.first-run-path {
+  font-size: var(--size-14);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+  margin-bottom: var(--space-6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.first-run-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.first-run-plinth {
+  width: 100%;
+  height: auto;
+}

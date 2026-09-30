@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="#2F6B57"/>
+  <!-- plinth -->
+  <polygon points="256,150 414,241 256,332 98,241" fill="#EEF2F0"/>
+  <polygon points="98,241 256,332 256,382 98,291" fill="#D9E1DD"/>
+  <polygon points="414,241 256,332 256,382 414,291" fill="#BFCBC5"/>
+  <!-- the white-card model standing on it -->
+  <polygon points="256,142 331,185 256,228 181,185" fill="#FFFFFF"/>
+  <polygon points="181,185 256,228 256,288 181,245" fill="#F2F5F3"/>
+  <polygon points="331,185 256,228 256,288 331,245" fill="#D6DFDA"/>
+  <!-- entrance -->
+  <polygon points="208,221 226,231 226,268 208,258" fill="#9FB2A9"/>
+</svg>

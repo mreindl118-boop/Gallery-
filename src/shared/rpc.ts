@@ -1,0 +1,93 @@
+import { z } from 'zod'
+import {
+  AppSettings,
+  EngineState,
+  LibraryStatus,
+  ProjectId,
+  ProjectName,
+  ProjectSummary,
+  ThemePreference
+} from './schemas'
+
+/**
+ * The typed contract between renderer and main. Every method has a zod
+ * schema for its input (validated in main, the trust boundary) and its
+ * output. Add a method here, then implement it in src/main/rpc.ts; the
+ * preload API and renderer types follow automatically.
+ */
+const m = <I extends z.ZodType, O extends z.ZodType>(input: I, output: O) => ({ input, output })
+const none = z.undefined()
+
+export const AppInfo = z.object({
+  version: z.string(),
+  platform: z.string(),
+  resolvedTheme: z.enum(['light', 'dark']),
+  engine: EngineState
+})
+export type AppInfo = z.infer<typeof AppInfo>
+
+export const EnginePing = z.object({ pid: z.number(), uptimeMs: z.number(), version: z.string() })
+
+export const rpcContract = {
+  'app.info': m(none, AppInfo),
+  'settings.get': m(none, AppSettings),
+  'settings.setTheme': m(z.object({ theme: ThemePreference }), AppSettings),
+
+  'library.status': m(none, LibraryStatus),
+  /** Opens a folder picker; resolves to the chosen path or null. */
+  'library.pickFolder': m(none, z.string().nullable()),
+  'library.setLocation': m(z.object({ path: z.string().min(1) }), LibraryStatus),
+  'library.reveal': m(none, z.void()),
+
+  'projects.list': m(none, z.array(ProjectSummary)),
+  'projects.create': m(z.object({ name: ProjectName }), ProjectSummary),
+  'projects.rename': m(z.object({ id: ProjectId, name: ProjectName }), ProjectSummary),
+  'projects.trash': m(z.object({ id: ProjectId }), z.void()),
+  'projects.reorder': m(z.object({ ids: z.array(ProjectId) }), z.array(ProjectSummary)),
+  'projects.reveal': m(z.object({ id: ProjectId }), z.void()),
+
+  'engine.ping': m(none, EnginePing)
+} as const
+
+export type RpcContract = typeof rpcContract
+export type RpcMethod = keyof RpcContract
+export type RpcInput<K extends RpcMethod> = z.input<RpcContract[K]['input']>
+export type RpcOutput<K extends RpcMethod> = z.output<RpcContract[K]['output']>
+
+export type RpcResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
+
+export const RPC_CHANNEL = 'gallery:rpc'
+export const EVENT_CHANNEL = 'gallery:event'
+export const ENGINE_PORT_CHANNEL = 'gallery:engine-port'
+
+/** Low-volume events pushed from main to the renderer. */
+export const MainEvent = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('library.changed'), projects: z.array(ProjectSummary) }),
+  z.object({ type: z.literal('library.status'), status: LibraryStatus }),
+  z.object({ type: z.literal('theme.changed'), resolved: z.enum(['light', 'dark']) }),
+  z.object({ type: z.literal('settings.changed'), settings: AppSettings }),
+  z.object({ type: z.literal('engine.state'), state: EngineState })
+])
+export type MainEvent = z.infer<typeof MainEvent>
+
+/**
+ * High-volume events from the engine, delivered to the renderer over a
+ * MessagePort in batches of about 10 Hz. M1 adds import progress and
+ * thumbnail events here.
+ */
+export const EngineEvent = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('engine.heartbeat'), uptimeMs: z.number() })
+])
+export type EngineEvent = z.infer<typeof EngineEvent>
+export const EngineEventBatch = z.array(EngineEvent)
+
+/** User-facing error codes. Messages say what happened and what to do. */
+export class GalleryError extends Error {
+  constructor(
+    readonly code: string,
+    message: string
+  ) {
+    super(message)
+    this.name = 'GalleryError'
+  }
+}

@@ -1,0 +1,10 @@
+node_modules/
+out/
+dist/
+test-results/
+playwright-report/
+qa/shots/
+fixtures/generated/
+*.log
+.DS_Store
+peek.png

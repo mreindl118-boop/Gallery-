@@ -1,0 +1,99 @@
+/*
+ * galleryLAB design tokens. Documented in docs/DESIGN.md; the window chrome
+ * colors in src/main/theme.ts must match --ground.
+ */
+:root {
+  /* Palette: light (Paper) */
+  --paper: #f7f8f7;
+  --plaster: #eceeed;
+  --graphite: #22272b;
+  --slate: #646d73;
+  --rule: #d5d9db;
+  --cutting-mat: #2f6b57;
+
+  --ground: var(--paper);
+  --surface: var(--plaster);
+  --text: var(--graphite);
+  --text-2: var(--slate);
+  --divider: var(--rule);
+  /* The project accent replaces this while a project is open (contrast ≥ 4.5:1 on ground). */
+  --accent: var(--cutting-mat);
+  --accent-ink: #ffffff;
+  --danger: #9b2c22;
+  --scrim: rgb(34 39 43 / 0.28);
+  --field: #ffffff;
+
+  /* Architectural model: white card under soft light */
+  --card-top: #ffffff;
+  --card-left: #e9ecea;
+  --card-right: #dde1df;
+  --card-edge: #c9cfcc;
+  --card-shadow: rgb(34 39 43 / 0.1);
+  --card-line: #b9c0bd;
+
+  /* Type */
+  --font-display: 'Newsreader Variable', 'Newsreader', Georgia, serif;
+  --font-text: 'Libre Franklin Variable', 'Libre Franklin', 'Segoe UI', system-ui, sans-serif;
+  --size-12: 12px;
+  --size-14: 14px;
+  --size-16: 16px;
+  --size-18: 18px;
+  --size-21: 21px;
+  --size-24: 24px;
+  --size-36: 36px;
+  --size-48: 48px;
+  --size-60: 60px;
+  --size-72: 72px;
+
+  /* Space: a 4 px base, generous at the top end */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  --radius-s: 3px;
+  --radius-m: 6px;
+  --titlebar-height: 44px;
+
+  /* Motion: critically damped, no bounce */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-panel: 220ms;
+  --duration-quick: 140ms;
+
+  color-scheme: light;
+}
+
+/* Darkroom: neutral, untinted, so photos are judged against neutral gray */
+:root[data-theme='dark'] {
+  --ground: #262626;
+  --surface: #313131;
+  --text: #e7e7e5;
+  --text-2: #a3a3a1;
+  --divider: #3d3d3d;
+  --accent: #7fbfa6;
+  --accent-ink: #1b1b1b;
+  --danger: #f08a7e;
+  --scrim: rgb(0 0 0 / 0.5);
+  --field: #2b2b2b;
+
+  --card-top: #d9d9d7;
+  --card-left: #a9a9a7;
+  --card-right: #8f8f8d;
+  --card-edge: #6e6e6c;
+  --card-shadow: rgb(0 0 0 / 0.35);
+  --card-line: #8a8a88;
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-panel: 200ms;
+    --duration-quick: 0ms;
+  }
+}

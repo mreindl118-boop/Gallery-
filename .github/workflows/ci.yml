@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: Checks and end-to-end (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+      - name: End-to-end
+        run: xvfb-run -a -s "-screen 0 1600x1000x24" npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-results-linux
+          path: test-results/
+
+  windows:
+    name: Windows installer and portable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Package (NSIS + portable)
+        run: npx electron-builder --win nsis portable --x64 --publish never
+      - name: Smoke test the unpacked build
+        shell: pwsh
+        run: |
+          $env:GALLERYLAB_EXECUTABLE = (Resolve-Path dist/win-unpacked/galleryLAB.exe).Path
+          npx playwright test smoke
+      - name: Install silently and launch the installed app
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -Filter '*-setup.exe' | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $exe = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -Recurse -Filter 'galleryLAB.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { throw 'Installed executable not found under %LOCALAPPDATA%\Programs' }
+          Write-Host "Installed at $exe"
+          $env:GALLERYLAB_EXECUTABLE = $exe
+          npx playwright test smoke
+      - name: Launch the portable build
+        shell: pwsh
+        run: |
+          $portable = Get-ChildItem dist -Filter '*-portable.exe' | Select-Object -First 1
+          $env:GALLERYLAB_USER_DATA = Join-Path $env:RUNNER_TEMP 'portable-ud'
+          $env:GALLERYLAB_HIDDEN = '1'
+          Start-Process -FilePath $portable.FullName
+          $deadline = (Get-Date).AddSeconds(90)
+          do {
+            Start-Sleep -Seconds 3
+            $running = Get-Process -Name 'galleryLAB' -ErrorAction SilentlyContinue
+            $settings = Test-Path (Join-Path $env:GALLERYLAB_USER_DATA 'Local State')
+          } until (($running -and $settings) -or (Get-Date) -gt $deadline)
+          if (-not ($running -and $settings)) { throw 'Portable build did not start' }
+          Get-Process -Name 'galleryLAB' | Stop-Process -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: galleryLAB-windows
+          path: |
+            dist/*-setup.exe
+            dist/*-portable.exe
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-results-windows
+          path: test-results/

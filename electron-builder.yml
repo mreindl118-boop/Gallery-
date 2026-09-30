@@ -1,0 +1,49 @@
+appId: app.gallerylab.desktop
+productName: galleryLAB
+copyright: Copyright © 2026 galleryLAB
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,test,tests,__tests__,docs,example,examples}'
+# Native binaries must live outside the asar archive.
+asarUnpack:
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+  - '**/node_modules/exiftool-vendored*/**'
+  - '**/node_modules/better-sqlite3/**'
+  - '**/node_modules/onnxruntime-node/**'
+  - '**/*.node'
+npmRebuild: true
+nodeGypRebuild: false
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName}-${version}-${arch}-${target}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: galleryLAB
+  uninstallDisplayName: galleryLAB
+  deleteAppDataOnUninstall: false
+  artifactName: ${productName}-${version}-setup.${ext}
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+mac:
+  icon: build/icon.png
+  target: [dmg]
+  category: public.app-category.photography
+linux:
+  icon: build/icon.png
+  target: [dir]
+  category: Graphics
