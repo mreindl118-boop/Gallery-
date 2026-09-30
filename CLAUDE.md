@@ -31,6 +31,8 @@ src/
     engine-host.ts  spawns/restarts the engine utilityProcess, request/response, MessagePorts
     rpc.ts          single ipcMain.handle channel, sender check, zod-parsed input
     window.ts       frameless window, titleBarOverlay, navigation/permission lockdown
+    updates/        auto-update: controller.ts (installer via electron-updater, portable self-replace, fake),
+                    portable-core.ts (verified download + same-path swap; Electron-free, unit-tested)
   engine/index.ts   utilityProcess (own build entry → out/main/engine.js). All heavy work lands here.
   preload/          contextBridge API (`window.gallery`), typed from shared/rpc.ts; api.d.ts = types
   renderer/         React 19 UI. index.html holds the CSP.
@@ -70,6 +72,19 @@ Headless in the cloud container: `xvfb-run -a -s "-screen 0 1600x1000x24" npx pl
 CI (`.github/workflows/ci.yml`): Linux job runs every check + e2e; Windows job builds NSIS + portable,
 smoke-tests the unpacked build, installs silently and launches, and starts the portable exe.
 
+## Releases and updates
+
+- Bump `version` in package.json, add `.github/release-notes/v<version>.md`, push, then run the **Release**
+  workflow (Actions → Release → version) or push tag `v<version>`. It builds on Windows, runs every check,
+  smoke-tests installed/portable builds, runs `scripts/ci/update-test.ps1` (auto-update into a custom folder,
+  manual upgrade, portable self-replace), then publishes to the public repo
+  `mreindl118-boop/galleryLAB-releases` using the `RELEASES_TOKEN` Actions secret.
+- The source repo is private; installed apps read updates from the public releases repo (electron-builder
+  `publish` → `app-update.yml`; `latest.yml` + blockmap for the installer; `latest-portable.json` for the
+  portable exe). `RELEASES_REPO` in `src/shared/release.ts` must match `electron-builder.yml` (a test checks).
+- Updates never move the app: the installer is pinned to the running exe's folder; the portable exe is
+  swapped at its own path. User data (`%APPDATA%\galleryLAB`) and the Library are outside both.
+
 ## Conventions
 
 - TypeScript strict + `noUncheckedIndexedAccess`. zod v4 for every boundary (IPC, JSON files, engine messages).
@@ -83,6 +98,10 @@ smoke-tests the unpacked build, installs silently and launches, and starts the p
   `src/main/theme.ts`.
 - Test hooks via env: `GALLERYLAB_USER_DATA` (isolated userData), `GALLERYLAB_DEFAULT_LIBRARY` (first-run default),
   `GALLERYLAB_EXECUTABLE` (harness launches a packaged build), `GALLERYLAB_HIDDEN` (don't show the window).
+  Updates: `GALLERYLAB_UPDATE_FEED` (loopback http or https feed base URL instead of the releases repo),
+  `GALLERYLAB_UPDATE_AUTO_APPLY=1` (install as soon as downloaded), `GALLERYLAB_UPDATE_CHECK_DELAY_MS` (first
+  check delay; the e2e harness sets 1 h), `GALLERYLAB_UPDATE_FAKE=1` (scripted backend for UI tests),
+  `GALLERYLAB_WAIT_FOR_PID` (set by the portable updater on relaunch).
 
 ## Gotchas
 
