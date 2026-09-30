@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app, net } from 'electron'
 import { NsisUpdater } from 'electron-updater'
@@ -48,6 +48,8 @@ interface Backend {
   onQuit(): void
   /** Don't install on this quit (Windows session ending). */
   postpone(): void
+  /** A downloaded update is waiting to be installed at this launch: check right away. */
+  wantsEarlyCheck?(): boolean
 }
 
 type Patch = (p: Partial<UpdateStatus>) => void
@@ -56,6 +58,8 @@ interface Ctx {
   patch: Patch
   /** Whether automatic updates are on right now (for message wording). */
   auto: () => boolean
+  /** Install the ready update now, telling the user first (used at launch). */
+  installNow: () => void
 }
 
 /**
@@ -78,7 +82,11 @@ export class UpdateController {
     private readonly onChange: (s: UpdateStatus) => void
   ) {
     const feed = testFeed()
-    this.backend = pickBackend(feed, { patch: (p) => this.patch(p), auto: () => this.status.auto })
+    this.backend = pickBackend(feed, {
+      patch: (p) => this.patch(p),
+      auto: () => this.status.auto,
+      installNow: () => this.installAnnounced()
+    })
     this.status = {
       kind: this.backend?.kind ?? 'none',
       current: app.getVersion(),
@@ -87,7 +95,8 @@ export class UpdateController {
       version: null,
       percent: null,
       message: null,
-      lastChecked: null
+      lastChecked: null,
+      installing: false
     }
   }
 
@@ -117,8 +126,10 @@ export class UpdateController {
     if (this.timer) clearInterval(this.timer)
     this.firstTimer = null
     this.timer = null
-    if (!this.backend || !this.status.auto) return
-    const delay = Number(process.env['GALLERYLAB_UPDATE_CHECK_DELAY_MS'] ?? FIRST_CHECK_MS)
+    if (!this.backend || (!this.status.auto && !this.backend.wantsEarlyCheck?.())) return
+    const delay = this.backend.wantsEarlyCheck?.()
+      ? 1000
+      : Number(process.env['GALLERYLAB_UPDATE_CHECK_DELAY_MS'] ?? FIRST_CHECK_MS)
     this.firstTimer = setTimeout(() => void this.check(), Number.isFinite(delay) ? delay : FIRST_CHECK_MS)
     this.timer = setInterval(() => void this.check(), EVERY_MS)
     this.timer.unref?.()
@@ -150,8 +161,16 @@ export class UpdateController {
   /** False when there is nothing ready to install (the caller tells the user). */
   install(): boolean {
     if (!this.backend || this.status.phase !== 'ready') return false
-    this.backend.install()
+    this.installAnnounced()
     return true
+  }
+
+  /** Say "Updating galleryLAB…" in the window, give it a moment to show, then close and install. */
+  private installAnnounced(): void {
+    if (!this.backend || this.status.installing) return
+    this.patch({ installing: true })
+    const backend = this.backend
+    setTimeout(() => backend.install(), 1500)
   }
 
   setAuto(auto: boolean): UpdateStatus {
@@ -222,6 +241,9 @@ class InstallerBackend implements Backend {
   private version: string | null = null
   /** A download is under way, so an error means the download failed, not the check. */
   private fetching = false
+  /** An update downloaded in an earlier session is waiting: install it at this launch. */
+  private installAtLaunch = false
+  private readonly marker = join(app.getPath('userData'), 'pending-update.json')
   private readonly patch: Patch
 
   constructor(
@@ -231,7 +253,24 @@ class InstallerBackend implements Backend {
     this.patch = ctx.patch
   }
 
+  wantsEarlyCheck(): boolean {
+    return this.installAtLaunch
+  }
+
   async init(): Promise<void> {
+    // A verified update downloaded last time is installed now, while the user is here to see it,
+    // rather than silently on quit, where a shutdown could interrupt it and leave no galleryLAB.
+    try {
+      const waiting = (JSON.parse(readFileSync(this.marker, 'utf8')) as { version?: unknown }).version
+      if (typeof waiting === 'string' && compareVersions(waiting, app.getVersion()) > 0) {
+        this.installAtLaunch = true
+        updateLog('info', `update ${waiting} was downloaded earlier; installing it at this launch`)
+      } else {
+        rmSync(this.marker, { force: true })
+      }
+    } catch {
+      // No update waiting.
+    }
     const u = new NsisUpdater()
     u.logger = {
       info: (m: unknown) => updateLog('info', m),
@@ -239,7 +278,7 @@ class InstallerBackend implements Backend {
       error: (m: unknown) => updateLog('error', m),
       debug: () => undefined
     }
-    u.autoInstallOnAppQuit = true
+    u.autoInstallOnAppQuit = false
     u.allowDowngrade = false
     u.allowPrerelease = false
     u.disableWebInstaller = true
@@ -258,15 +297,29 @@ class InstallerBackend implements Backend {
       this.fetching = u.autoDownload
       this.patch({ phase: 'available', version: info.version, lastChecked: nowIso() })
     })
-    u.on('update-not-available', () =>
+    u.on('update-not-available', () => {
+      this.installAtLaunch = false
+      rmSync(this.marker, { force: true })
       this.patch({ phase: 'up-to-date', version: null, percent: null, lastChecked: nowIso() })
-    )
+    })
     u.on('download-progress', (p) =>
       this.patch({ phase: 'downloading', version: this.version, percent: Math.floor(p.percent) })
     )
     u.on('update-downloaded', (info) => {
       this.fetching = false
+      try {
+        writeFileSync(this.marker, JSON.stringify({ version: info.version }))
+      } catch (err) {
+        updateLog('warn', 'could not record the waiting update', err)
+      }
       this.patch({ phase: 'ready', version: info.version, percent: 100, message: null })
+      if (this.installAtLaunch) {
+        this.installAtLaunch = false
+        this.ctx.installNow()
+      } else if (process.env['GALLERYLAB_UPDATE_QUIT_AFTER_DOWNLOAD'] === '1') {
+        // Test hook: quit normally, as a user would, to prove nothing installs on quit.
+        setTimeout(() => app.quit(), 1000)
+      }
     })
     u.on('error', (err) => {
       updateLog('error', 'electron-updater', err)
@@ -312,7 +365,7 @@ class InstallerBackend implements Backend {
   }
 
   onQuit(): void {
-    // electron-updater installs a downloaded update on quit by itself.
+    // Nothing: a downloaded update installs at the next launch (see init), never silently on quit.
   }
 
   postpone(): void {
@@ -510,7 +563,7 @@ class FakeBackend implements Backend {
     this.patch({ phase: 'ready', version: '9.9.9', percent: 100 })
   }
   install(): void {
-    this.patch({ phase: 'up-to-date', current: '9.9.9', version: null, percent: null })
+    this.patch({ phase: 'up-to-date', current: '9.9.9', version: null, percent: null, installing: false })
   }
   setAutoDownload(on: boolean): void {
     this.auto = on

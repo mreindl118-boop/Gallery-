@@ -1,4 +1,5 @@
 import type { UpdateStatus } from '@shared/schemas'
+import { whenInstalled } from '../components/UpdatesSection'
 import { reportError, useApp } from '../state/store'
 
 /** Wire main-process and engine events into the store. Called once at startup. */
@@ -72,7 +73,7 @@ function onUpdateStatus(status: UpdateStatus): void {
   }
   if (status.phase === 'ready' && status.version && announced !== status.version) {
     announced = status.version
-    notify(`galleryLAB ${status.version} is ready. It installs when you quit.`, 'info', {
+    notify(`galleryLAB ${status.version} is ready. ${whenInstalled(status)}`, 'info', {
       key: 'update-ready',
       action: {
         label: 'Restart to update',

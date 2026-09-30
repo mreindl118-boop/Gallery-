@@ -115,6 +115,8 @@ export const UpdateStatus = z.object({
   percent: z.number().min(0).max(100).nullable(),
   /** Plain-language error: what happened and what to do. */
   message: z.string().nullable(),
-  lastChecked: z.string().nullable()
+  lastChecked: z.string().nullable(),
+  /** galleryLAB is about to close to install; the window says so. */
+  installing: z.boolean().default(false)
 })
 export type UpdateStatus = z.infer<typeof UpdateStatus>

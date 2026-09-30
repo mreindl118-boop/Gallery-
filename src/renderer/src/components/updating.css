@@ -1,0 +1,23 @@
+.updating {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-content: center;
+  gap: var(--space-3);
+  padding: var(--space-8);
+  background: var(--ground);
+  text-align: left;
+  animation: fade-in var(--duration-panel) var(--ease-out);
+}
+
+.updating-title {
+  font-size: var(--size-36);
+  line-height: 1.15;
+}
+
+.updating-body {
+  color: var(--text-2);
+  font-size: var(--size-16);
+  max-width: 44ch;
+}

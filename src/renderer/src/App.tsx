@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Notices } from './components/Notices'
 import { SettingsDialog } from './components/SettingsDialog'
+import { UpdatingOverlay } from './components/UpdatingOverlay'
 import { FirstRunScreen } from './screens/FirstRunScreen'
 import { LibraryScreen } from './screens/LibraryScreen'
 import { useApp } from './state/store'
@@ -48,6 +49,7 @@ export function App() {
       {status.state === 'ready' ? <LibraryScreen /> : <FirstRunScreen status={status} />}
       <SettingsDialog />
       <Notices />
+      <UpdatingOverlay />
     </>
   )
 }

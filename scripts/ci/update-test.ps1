@@ -92,7 +92,7 @@ $feed = "http://127.0.0.1:$port/"
 $server = Start-Process -FilePath 'python' -ArgumentList '-m', 'http.server', "$port", '--bind', '127.0.0.1', '--directory', "`"$NewDist`"" -PassThru -WindowStyle Hidden
 function Show-Diagnostics {
   Write-Host '--- diagnostics'
-  foreach ($d in @($tools, $dir1, $dir2)) {
+  foreach ($d in @($tools, $dir1, $dir1b, $dir2)) {
     if ($d -and (Test-Path -LiteralPath $d)) {
       Write-Host "contents of ${d}:"
       Get-ChildItem -LiteralPath $d -Force | ForEach-Object { Write-Host ("  {0,12}  {1}" -f $_.Length, $_.Name) }
@@ -105,7 +105,7 @@ function Show-Diagnostics {
     ForEach-Object { Write-Host ("process {0} {1} {2}" -f $_.Id, $_.Name, $_.Path) }
 }
 
-$tools = $null; $dir1 = $null; $dir2 = $null
+$tools = $null; $dir1 = $null; $dir1b = $null; $dir2 = $null
 try {
   Wait-Until { (Invoke-WebRequest -UseBasicParsing "${feed}latest.yml").StatusCode -eq 200 } 30 'feed serves latest.yml'
   Wait-Until { (Invoke-WebRequest -UseBasicParsing "${feed}latest-portable.json").StatusCode -eq 200 } 10 'feed serves latest-portable.json'
@@ -141,6 +141,28 @@ try {
   Stop-Gallery
   Assert-UserDataKept
   Uninstall-Gallery $dir1
+
+  # 1b. Installer: nothing installs on quit; a downloaded update installs at the next launch.
+  Write-Host '--- 1b. installer: the update waits for the next launch, never installs on quit'
+  $dir1b = Join-Path $root 'Apps\next launch'
+  Start-Process -FilePath (Join-Path $OldDist "galleryLAB-$OldVersion-setup.exe") -ArgumentList '/S', "/D=$dir1b" -Wait
+  $exe1b = Join-Path $dir1b 'galleryLAB.exe'
+  Assert ((Get-Version $exe1b) -like "$OldCore*") "old build installed into $dir1b"
+  Remove-Item Env:GALLERYLAB_UPDATE_AUTO_APPLY -ErrorAction SilentlyContinue
+  $env:GALLERYLAB_UPDATE_QUIT_AFTER_DOWNLOAD = '1'
+  $p = Start-Process -FilePath $exe1b -PassThru
+  Wait-Until { $p.HasExited } 180 'the app downloaded the update and quit normally'
+  Start-Sleep -Seconds 10
+  Assert ((Get-Version $exe1b) -like "$OldCore*") 'nothing was installed on quit'
+  Assert (Test-Path -LiteralPath (Join-Path $userData 'pending-update.json')) 'the waiting update was recorded'
+  Remove-Item Env:GALLERYLAB_UPDATE_QUIT_AFTER_DOWNLOAD
+  Start-Process -FilePath $exe1b
+  Wait-Until { (Get-Version $exe1b) -like "$NewCore*" } 240 "the next launch installed $NewVersion in $dir1b"
+  Wait-Until { @(Get-Process -Name 'galleryLAB' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe1b }).Count -gt 0 } 90 'galleryLAB opened again from the same folder'
+  Stop-Gallery
+  Assert-UserDataKept
+  Uninstall-Gallery $dir1b
+  $env:GALLERYLAB_UPDATE_AUTO_APPLY = '1'
 
   # 2. Installer, manual upgrade over an existing install.
   Write-Host '--- 2. installer: manual upgrade lands in the existing folder'

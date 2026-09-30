@@ -13,6 +13,11 @@ function checkedLine(iso: string | null): string | null {
     : `Last checked ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} at ${time}.`
 }
 
+/** The installed app installs at the next launch; the portable exe swaps itself when it quits. */
+export function whenInstalled(s: UpdateStatus): string {
+  return s.kind === 'portable' ? 'It installs when you quit.' : 'It installs the next time you open galleryLAB.'
+}
+
 function describe(s: UpdateStatus): string {
   switch (s.phase) {
     case 'checking':
@@ -24,7 +29,7 @@ function describe(s: UpdateStatus): string {
     case 'downloading':
       return `Downloading galleryLAB ${s.version}.`
     case 'ready':
-      return `galleryLAB ${s.version} is ready. It installs when you quit.`
+      return `galleryLAB ${s.version} is ready. ${whenInstalled(s)}`
     case 'error':
       return s.message ?? 'galleryLAB couldn’t check for updates. Try again later.'
     default:
@@ -116,7 +121,8 @@ export function UpdatesSection() {
         <span>
           <span className="updates-auto-label">Update automatically</span>
           <span className="settings-note settings-note-flush">
-            Download new versions in the background and install them when you quit. {where}
+            Download new versions in the background and install them{' '}
+            {s.kind === 'portable' ? 'when you quit' : 'the next time you open galleryLAB'}. {where}
           </span>
         </span>
       </label>

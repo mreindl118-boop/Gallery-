@@ -16,19 +16,26 @@ test('an update is found, downloaded, announced and installed from Settings', as
   try {
     await page.getByRole('button', { name: 'Use this folder' }).click()
     // Automatic check → background download → one quiet notice with the action.
-    await expect(page.getByText('galleryLAB 9.9.9 is ready. It installs when you quit.').first()).toBeVisible({
+    await expect(
+      page.getByText('galleryLAB 9.9.9 is ready. It installs the next time you open galleryLAB.').first()
+    ).toBeVisible({
       timeout: 10_000
     })
     await expect(page.getByRole('button', { name: 'Restart to update' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Settings' }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('galleryLAB 9.9.9 is ready. It installs when you quit.')).toBeVisible()
+    await expect(
+      dialog.getByText('galleryLAB 9.9.9 is ready. It installs the next time you open galleryLAB.')
+    ).toBeVisible()
     await expect(
       dialog.getByText('galleryLAB stays in the folder you installed it to.', { exact: false })
     ).toBeVisible()
     await dialog.getByRole('button', { name: 'Restart to update' }).click()
-    await expect(dialog.getByText('galleryLAB 9.9.9 is up to date.')).toBeVisible()
+    // The window says what is happening before galleryLAB closes to install.
+    await expect(page.getByRole('alertdialog', { name: 'Updating galleryLAB' })).toBeVisible()
+    await expect(dialog.getByText('galleryLAB 9.9.9 is up to date.')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('alertdialog', { name: 'Updating galleryLAB' })).toHaveCount(0)
 
     // Turning automatic updates off is saved.
     const box = dialog.getByRole('checkbox', { name: /Update automatically/ })
