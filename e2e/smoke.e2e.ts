@@ -1,13 +1,21 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
+import sharp from 'sharp'
 import { launch } from './harness'
 
 // Launches whatever build the harness points at (dev output or a packaged
-// executable via GALLERYLAB_EXECUTABLE) and checks the core loop works.
-test('app launches, the engine starts and a project can be created', async () => {
-  const lib = join(mkdtempSync(join(tmpdir(), 'gallerylab-smoke-')), 'galleryLAB')
+// executable via GALLERYLAB_EXECUTABLE) and checks the core loop works,
+// including a real import so the packaged image library and SQLite are exercised.
+test('app launches, a project can be created and a photo imports', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'gallerylab-smoke-'))
+  const lib = join(base, 'galleryLAB')
+  const src = join(base, 'Photos')
+  mkdirSync(src)
+  await sharp({ create: { width: 640, height: 480, channels: 3, background: { r: 90, g: 120, b: 160 } } })
+    .jpeg()
+    .toFile(join(src, 'one.jpg'))
   const l = await launch({ env: { GALLERYLAB_DEFAULT_LIBRARY: lib } })
   try {
     await l.page.getByRole('button', { name: 'Use this folder' }).click()
@@ -24,8 +32,21 @@ test('app launches, the engine starts and a project can be created', async () =>
         )
       )
       .toBe(true)
+    const p = (await l.page.evaluate(() => window.gallery.invoke('projects.list')))[0]!
+    await l.page.evaluate((a) => window.gallery.invoke('import.add', a), { id: p.id, paths: [src] })
+    await expect
+      .poll(
+        () => l.page.evaluate((id) => window.gallery.invoke('import.status', { id }).then((s) => s.progress), p.id),
+        { timeout: 60_000 }
+      )
+      .toMatchObject({ state: 'done', imported: 1, failed: 0 })
+    const photos = await l.page.evaluate((id) => window.gallery.invoke('photos.list', { id }), p.id)
+    expect(photos).toHaveLength(1)
+    expect(photos[0]!.thumb).toBeTruthy()
+    const status = await l.page.evaluate((u) => fetch(u).then((r) => r.status), `gallery://${p.id}/${photos[0]!.thumb}`)
+    expect(status).toBe(200)
   } finally {
     await l.cleanup()
-    rmSync(join(lib, '..'), { recursive: true, force: true })
+    rmSync(base, { recursive: true, force: true })
   }
 })
