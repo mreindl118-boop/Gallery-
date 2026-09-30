@@ -1,0 +1,71 @@
+.project-header {
+  margin-top: var(--titlebar-height);
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-8) var(--space-5);
+}
+
+.project-back {
+  flex: none;
+}
+
+.project-name {
+  min-width: 0;
+  font-size: var(--size-24);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Empty project: one calm, full-bleed invitation. */
+.project-empty {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-7) var(--space-8) var(--space-9);
+}
+
+.project-empty-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-6);
+  max-width: 30ch;
+}
+
+.project-empty-line {
+  font-size: var(--size-36);
+  line-height: 1.2;
+}
+
+.project-empty-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Import view: contact sheet on the left two-thirds, progress and issues on the right third. */
+.project-import {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+}
+
+.project-sheet {
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (max-width: 1100px) {
+  .project-header {
+    padding-left: var(--space-7);
+    padding-right: var(--space-7);
+  }
+  .project-empty {
+    padding-left: var(--space-7);
+    padding-right: var(--space-7);
+  }
+}

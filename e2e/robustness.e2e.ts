@@ -13,7 +13,7 @@ test.beforeEach(async () => {
   libraryRoot = join(parent, 'galleryLAB')
   l = await launch({ env: { GALLERYLAB_DEFAULT_LIBRARY: libraryRoot } })
   await l.page.getByRole('button', { name: 'Use this folder' }).click()
-  await expect(l.page.getByText('Create a project to begin.', { exact: false })).toBeVisible()
+  await expect(l.page.getByText('Create a project, then drop photos or folders anywhere in the window.')).toBeVisible()
 })
 
 test.afterEach(async () => {
@@ -119,7 +119,7 @@ test('Ctrl+N does nothing while a dialog is open', async () => {
   expect(await page.evaluate(() => window.gallery.invoke('projects.list'))).toEqual([])
 })
 
-test('dropping photos explains that adding photos comes in the next update', async () => {
+test('dropping photos on the Library outside a project says to open a project first', async () => {
   const { page } = l
   await page.evaluate(() => {
     const dt = new DataTransfer()
@@ -127,5 +127,5 @@ test('dropping photos explains that adding photos comes in the next update', asy
     document.body.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }))
     document.body.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }))
   })
-  await expect(page.getByText('Adding photos isn’t in this version yet.', { exact: false })).toBeVisible()
+  await expect(page.getByText('Open a project, then drop photos or folders into it.')).toBeVisible()
 })

@@ -1,0 +1,70 @@
+/* The contact sheet: photos on the plain ground, nothing drawn over them. */
+.contact-sheet {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 var(--space-5) var(--space-7) var(--space-8);
+  contain: strict;
+}
+
+.contact-sheet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.contact-sheet-inner {
+  position: relative;
+  width: 100%;
+}
+
+.contact-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+}
+
+.contact-cell {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contact-photo {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Until there is a placeholder, a quiet surface holds the photo's shape. */
+.contact-photo[data-empty] {
+  background: var(--surface);
+}
+
+.contact-lqip,
+.contact-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.contact-thumb {
+  opacity: 0;
+  transition: opacity var(--duration-panel) var(--ease-out);
+}
+
+.contact-thumb[data-loaded] {
+  opacity: 1;
+}
+
+/* Once the thumbnail has faded in, the placeholder goes (so transparent photos show only themselves). */
+.contact-lqip {
+  transition: visibility 0s linear var(--duration-panel);
+}
+.contact-photo:has(.contact-thumb[data-loaded]) .contact-lqip {
+  visibility: hidden;
+}

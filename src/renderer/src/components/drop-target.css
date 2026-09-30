@@ -1,0 +1,21 @@
+/* A drag with files over a project's screen: a 2 px accent inset outline and one plain line, nothing more. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: var(--space-6);
+  animation: fade-in var(--duration-quick) var(--ease-out);
+}
+
+.drop-overlay-text {
+  padding: var(--space-2) var(--space-4);
+  background: var(--ground);
+  border-radius: var(--radius-s);
+  font-size: var(--size-14);
+  color: var(--text);
+}

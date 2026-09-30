@@ -5,6 +5,7 @@ import { Dialog, DialogActions, DialogClose } from '../components/Dialog'
 import { Plinth } from '../components/Plinth'
 import { ProjectCard } from '../components/ProjectCard'
 import { TitleBar } from '../components/TitleBar'
+import { openProject } from '../lib/bridge'
 import { reportError, useApp } from '../state/store'
 import './library.css'
 
@@ -45,6 +46,15 @@ export function LibraryScreen() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [createProject])
+
+  // Back from a project: focus its card again.
+  useEffect(() => {
+    const { returnFocus } = useApp.getState()
+    if (!returnFocus) return
+    set({ returnFocus: null })
+    // The card's onFocus makes it the tab stop.
+    cards.current.get(returnFocus)?.focus()
+  }, [set])
 
   const safeIndex = Math.min(focusIndex, Math.max(projects.length - 1, 0))
 
@@ -129,7 +139,9 @@ export function LibraryScreen() {
             <Plinth className="library-empty-plinth" size={170} height={26} />
             <div className="library-empty-text">
               <h1 className="library-empty-title display">Your Library is empty</h1>
-              <p className="library-empty-body">Create a project to begin. Adding photos arrives in the next update.</p>
+              <p className="library-empty-body">
+                Create a project, then drop photos or folders anywhere in the window.
+              </p>
               <Button variant="primary" onClick={createProject}>
                 New project
               </Button>
@@ -155,6 +167,7 @@ export function LibraryScreen() {
                     onTrash={() => setTrashing(p)}
                     onReveal={() => window.gallery.invoke('projects.reveal', { id: p.id }).catch(reportError)}
                     onKeyNav={(e) => onKeyNav(e, i)}
+                    onOpen={() => openProject(p.id)}
                   />
                 </div>
               ))}

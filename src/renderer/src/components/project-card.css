@@ -98,3 +98,9 @@
   margin: var(--space-1) var(--space-2);
   background: var(--divider);
 }
+
+/* A drag with files over this card: dropping imports into this project. */
+.project-card[data-dropping] {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
+}

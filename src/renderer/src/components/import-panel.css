@@ -1,0 +1,136 @@
+.import-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: 0 var(--space-7) var(--space-6) var(--space-5);
+}
+
+.import-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.import-headline {
+  font-size: var(--size-16);
+  line-height: 1.45;
+  max-width: 40ch;
+}
+
+.import-detail {
+  font-size: var(--size-14);
+  color: var(--text-2);
+}
+
+/* A hairline, not a meter: it only confirms that work moves. */
+.import-bar {
+  height: 2px;
+  margin-top: var(--space-3);
+  background: var(--divider);
+  overflow: hidden;
+}
+
+.import-bar-fill {
+  height: 100%;
+  background: var(--text-2);
+  transform-origin: left center;
+  transition: transform var(--duration-panel) var(--ease-out);
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.import-issues {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--divider);
+  padding-top: var(--space-4);
+}
+
+.import-issues-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.import-issues-title {
+  font-size: var(--size-16);
+  font-weight: 500;
+}
+
+.import-issues-count {
+  color: var(--text-2);
+  font-size: var(--size-14);
+}
+
+.import-retry-all {
+  margin-left: auto;
+  align-self: center;
+}
+
+.import-issue-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.import-issue-list {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.import-issue {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-3);
+}
+
+.import-issue-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.import-issue-name,
+.import-issue-folder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-issue-name {
+  font-size: var(--size-14);
+  font-weight: 500;
+}
+
+.import-issue-folder,
+.import-issue-reason {
+  font-size: var(--size-12);
+  color: var(--text-2);
+}
+
+.import-issue-reason {
+  color: var(--text);
+  font-size: var(--size-14);
+  margin-top: var(--space-1);
+}
+
+.import-issue-retry {
+  flex: none;
+  margin-top: var(--space-1);
+}
