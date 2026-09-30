@@ -1,10 +1,19 @@
 import { useState } from 'react'
-import type { LibraryStatus } from '@shared/schemas'
+import type { LibraryProblem, LibraryStatus } from '@shared/schemas'
 import { Button } from '../components/Button'
 import { Plinth } from '../components/Plinth'
 import { TitleBar } from '../components/TitleBar'
 import { reportError, useApp } from '../state/store'
 import './first-run.css'
+
+const PROBLEM_TEXT: Record<LibraryProblem, string> = {
+  missing:
+    'galleryLAB can’t find this folder. If it’s on a drive that isn’t connected, reconnect it and try again. If you moved it, choose it in its new place.',
+  unwritable: 'galleryLAB can’t save changes in this folder. Choose a folder you have permission to change.',
+  unreadable: 'galleryLAB couldn’t read what’s in this folder. Check that it opens in Explorer, then try again.',
+  'inside-app':
+    'This folder is inside galleryLAB’s own program folder, which every update replaces. Choose a folder outside it.'
+}
 
 /** Choosing (or re-finding) the Library folder. */
 export function FirstRunScreen({ status }: { status: Exclude<LibraryStatus, { state: 'ready' }> }) {
@@ -12,10 +21,10 @@ export function FirstRunScreen({ status }: { status: Exclude<LibraryStatus, { st
   const [busy, setBusy] = useState(false)
   const suggested = status.state === 'missing' ? status.path : status.defaultPath
 
-  const openAt = async (path: string) => {
+  const openAt = async (path: string, create: boolean) => {
     setBusy(true)
     try {
-      const next = await window.gallery.invoke('library.setLocation', { path })
+      const next = await window.gallery.invoke('library.setLocation', { path, create })
       const projects = next.state === 'ready' ? await window.gallery.invoke('projects.list') : []
       set({ status: next, projects })
     } catch (err) {
@@ -28,7 +37,7 @@ export function FirstRunScreen({ status }: { status: Exclude<LibraryStatus, { st
   const choose = async () => {
     try {
       const path = await window.gallery.invoke('library.pickFolder')
-      if (path) await openAt(path)
+      if (path) await openAt(path, true)
     } catch (err) {
       reportError(err)
     }
@@ -50,17 +59,14 @@ export function FirstRunScreen({ status }: { status: Exclude<LibraryStatus, { st
           ) : (
             <>
               <h1 className="first-run-title display">Your Library folder isn’t available</h1>
-              <p className="first-run-body">
-                galleryLAB can’t find or write to this folder. Reconnect the drive it lives on and try again, or choose
-                another folder.
-              </p>
+              <p className="first-run-body">{PROBLEM_TEXT[status.problem]}</p>
             </>
           )}
           <p className="first-run-path" title={suggested}>
             {suggested}
           </p>
           <div className="first-run-actions">
-            <Button variant="primary" disabled={busy} onClick={() => openAt(suggested)}>
+            <Button variant="primary" disabled={busy} onClick={() => openAt(suggested, status.state === 'unset')}>
               {status.state === 'unset' ? 'Use this folder' : 'Try again'}
             </Button>
             <Button disabled={busy} onClick={choose}>

@@ -46,3 +46,8 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+.notice p {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}

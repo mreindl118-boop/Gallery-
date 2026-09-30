@@ -1,8 +1,9 @@
 import { join } from 'node:path'
-import { BrowserWindow, nativeTheme, screen, session, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, screen, session, shell } from 'electron'
 import { CHROME, TITLE_BAR_HEIGHT } from './theme'
 
-const isDev = !!process.env['ELECTRON_RENDERER_URL']
+// Only development builds may load the renderer from a dev server; shipped builds ignore the variable.
+const isDev = !app.isPackaged && !!process.env['ELECTRON_RENDERER_URL']
 
 export function currentTheme(): 'light' | 'dark' {
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
@@ -14,8 +15,8 @@ export function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: Math.min(1440, Math.round(workAreaSize.width * 0.9)),
     height: Math.min(920, Math.round(workAreaSize.height * 0.9)),
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: Math.min(960, workAreaSize.width),
+    minHeight: Math.min(640, workAreaSize.height),
     show: false,
     backgroundColor: CHROME[theme].ground,
     title: 'galleryLAB',

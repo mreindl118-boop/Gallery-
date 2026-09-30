@@ -85,3 +85,8 @@
     animation: fade-out 200ms linear;
   }
 }
+
+.dialog-title,
+.dialog-description {
+  overflow-wrap: anywhere;
+}

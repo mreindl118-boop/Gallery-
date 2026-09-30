@@ -27,7 +27,7 @@ test('first run, create, rename and delete a project on disk', async () => {
   await expect(page.getByRole('heading', { name: 'Where should your Library live?' })).toBeVisible()
   await page.getByRole('button', { name: 'Use this folder' }).click()
 
-  await expect(page.getByText('Create a project, then drop photos or folders anywhere in the window.')).toBeVisible()
+  await expect(page.getByText('Create a project to begin. Adding photos arrives in the next update.')).toBeVisible()
   expect(existsSync(join(libraryRoot, 'library.json'))).toBe(true)
 
   // New project starts with its name selected for editing.
@@ -94,7 +94,7 @@ test('theme switching follows the choice and persists', async () => {
   await l.app.close()
   l = await launch({ userData, env: { GALLERYLAB_DEFAULT_LIBRARY: libraryRoot } })
   await expect(l.page.locator('html')).toHaveAttribute('data-theme', 'dark')
-  await expect(l.page.getByText('Create a project, then drop photos or folders anywhere in the window.')).toBeVisible()
+  await expect(l.page.getByText('Create a project to begin. Adding photos arrives in the next update.')).toBeVisible()
 })
 
 test('engine answers over RPC and the gallery scheme refuses paths outside a project', async () => {

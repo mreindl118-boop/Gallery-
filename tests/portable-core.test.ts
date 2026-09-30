@@ -9,10 +9,13 @@ import {
   cleanupLeftovers,
   downloadVerified,
   fetchFeed,
+  attemptsSoFar,
+  encodedHelper,
   hasReadyUpdate,
   HELPER_SCRIPT,
   helperEnv,
   readyVersion,
+  recordAttempt,
   sidecars
 } from '../src/main/updates/portable-core'
 
@@ -116,21 +119,22 @@ describe('portable self-update', () => {
 })
 
 describe('portable update helper', () => {
-  it('is plain ASCII with CRLF line endings and no paths of its own', () => {
-    // cmd.exe reads batch files in the OEM code page; ASCII keeps it safe for any user name.
+  it('is plain ASCII PowerShell with no paths of its own, passed as an encoded command', () => {
     expect([...HELPER_SCRIPT].every((c) => c.charCodeAt(0) < 128)).toBe(true)
-    expect(HELPER_SCRIPT.split('\r\n').length).toBeGreaterThan(10)
-    expect(HELPER_SCRIPT.replace(/\r\n/g, '')).not.toMatch(/\n/)
     expect(HELPER_SCRIPT).not.toMatch(/[A-Za-z]:\\/)
-    expect(HELPER_SCRIPT).toMatch(/DisableDelayedExpansion/)
-    // Every path is quoted and comes from the environment.
-    for (const v of ['GLAB_READY', 'GLAB_EXE', 'GLAB_READY_META']) expect(HELPER_SCRIPT).toContain(`"%${v}%"`)
-    expect(HELPER_SCRIPT).toMatch(/move \/y "%GLAB_READY%" "%GLAB_EXE%"/)
-    expect(HELPER_SCRIPT).toMatch(/if "%GLAB_RELAUNCH%"=="1" start "" "%GLAB_EXE%"/)
+    for (const v of ['GLAB_READY', 'GLAB_EXE', 'GLAB_READY_META', 'GLAB_APP_PID', 'GLAB_RELAUNCH']) {
+      expect(HELPER_SCRIPT).toContain(`$env:${v}`)
+    }
+    // Paths are only ever used literally (no wildcard expansion of [ ] in folder names).
+    for (const line of HELPER_SCRIPT.split('\r\n').filter((l) => /Test-Path|Remove-Item/.test(l))) {
+      expect(line).toContain('-LiteralPath')
+    }
+    expect(HELPER_SCRIPT).toContain('[System.IO.File]::Replace($ready, $exe, $old)')
+    expect(Buffer.from(encodedHelper(), 'base64').toString('utf16le')).toBe(HELPER_SCRIPT)
   })
 
   it('passes the exact exe path and its sidecars through the environment', () => {
-    const odd = join(dir, 'Pfad mit Ümlaut & 100% (x)', 'galleryLAB-0.1.1-portable.exe')
+    const odd = join(dir, 'Pfad mit Ümlaut & 100% [x]', 'galleryLAB-0.1.1-portable.exe')
     const env = helperEnv(odd, 4242, true)
     expect(env).toEqual({
       GLAB_APP_PID: '4242',
@@ -140,5 +144,21 @@ describe('portable update helper', () => {
       GLAB_RELAUNCH: '1'
     })
     expect(helperEnv(odd, 1, false).GLAB_RELAUNCH).toBe('0')
+  })
+
+  it('counts attempts so a swap that never completes stops being offered', async () => {
+    const feed = await fetchFeed(fetch, `${base}/latest-portable.json`)
+    await downloadVerified(fetch, `${base}/${feed.file}`, feed, exe, () => undefined)
+    expect(await attemptsSoFar(exe)).toBe(0)
+    expect(await recordAttempt(exe)).toBe(1)
+    expect(await recordAttempt(exe)).toBe(2)
+    expect(await attemptsSoFar(exe)).toBe(2)
+    expect(await readyVersion(exe)).toBe('0.2.0')
+  })
+
+  it('removes the previous build left beside the exe', async () => {
+    writeFileSync(sidecars(exe).old, 'previous')
+    await cleanupLeftovers(exe, '0.1.1')
+    expect(existsSync(sidecars(exe).old)).toBe(false)
   })
 })

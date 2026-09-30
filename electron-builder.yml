@@ -25,6 +25,16 @@ publish:
   owner: mreindl118-boop
   repo: Gallery-
   releaseType: release
+# Electron fuses, flipped at package time. Node-as-runtime tricks are off, and only the
+# integrity-checked app.asar can load. --inspect stays honored because Playwright drives the
+# packaged build through it in CI (it needs local code execution to use anyway).
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableCookieEncryption: true
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  enableNodeCliInspectArguments: true
 npmRebuild: true
 nodeGypRebuild: false
 win:

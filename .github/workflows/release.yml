@@ -13,6 +13,10 @@ on:
       version:
         description: 'Version to release, without the v (must match package.json), e.g. 0.1.1'
         required: true
+      replace:
+        description: 'Replace the files of an already published release (installed apps may have downloaded the old ones)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -185,6 +189,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
+          REPLACE: ${{ github.event.inputs.replace || 'false' }}
         run: |
           set -euo pipefail
           tag="v$VERSION"
@@ -199,8 +204,14 @@ jobs:
           flags=()
           if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $tag exists; replacing its assets"
+            # A published version is immutable: installed apps may already have its checksums.
+            if [[ "$REPLACE" != "true" ]]; then
+              echo "::error::Release $tag already exists. Bump the version, or re-run with replace checked."
+              exit 1
+            fi
+            echo "Release $tag exists; replacing its assets and notes as requested"
             gh release upload "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "galleryLAB $VERSION" --notes-file ".github/release-notes/$tag.md"
           else
             gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "galleryLAB $VERSION" --notes-file ".github/release-notes/$tag.md" "${flags[@]}"

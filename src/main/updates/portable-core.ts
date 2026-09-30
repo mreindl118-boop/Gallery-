@@ -12,10 +12,10 @@ import { compareVersions, PortableFeed, type PortableFeed as Feed } from '@share
  * the same path once galleryLAB has quit, so shortcuts, pins and the folder
  * the user keeps it in all stay valid.
  *
- * The move can't happen while galleryLAB runs: the portable launcher keeps
+ * The swap can't happen while galleryLAB runs: the portable launcher keeps
  * its own exe open (without delete sharing) to read the packed app. The helper
- * therefore waits for galleryLAB to exit, then retries the move until the
- * launcher has let go. Electron-free so it can be tested with plain Node.
+ * therefore waits for galleryLAB to exit, then retries until the launcher has
+ * let go. Electron-free so it can be tested with plain Node.
  */
 
 export type FetchLike = (url: string) => Promise<Response>
@@ -27,7 +27,9 @@ export function sidecars(exePath: string) {
   return {
     partial: join(dir, `${name}.update-partial`),
     ready: join(dir, `${name}.update`),
-    readyMeta: join(dir, `${name}.update.json`)
+    readyMeta: join(dir, `${name}.update.json`),
+    /** The previous build, briefly, while the helper's File.Replace completes. */
+    old: join(dir, `${name}.old`)
   }
 }
 
@@ -116,8 +118,9 @@ export async function readyVersion(exePath: string): Promise<string | null> {
  * downgrade). A newer ready update is kept so it can be installed.
  */
 export async function cleanupLeftovers(exePath: string, currentVersion: string): Promise<void> {
-  const { partial, ready, readyMeta } = sidecars(exePath)
+  const { partial, ready, readyMeta, old } = sidecars(exePath)
   await fs.rm(partial, { force: true }).catch(() => undefined)
+  if (existsSync(exePath)) await fs.rm(old, { force: true }).catch(() => undefined)
   const waiting = await readyVersion(exePath)
   if (waiting === null || compareVersions(waiting, currentVersion) <= 0) {
     await fs.rm(ready, { force: true }).catch(() => undefined)
@@ -126,47 +129,48 @@ export async function cleanupLeftovers(exePath: string, currentVersion: string):
 }
 
 /**
- * The helper that finishes a portable update after galleryLAB quits. It is
- * run by cmd.exe with every path passed through the environment, so the
- * script itself is plain ASCII and paths with spaces, non-Latin letters or
- * characters like & and % are safe.
+ * The helper that finishes a portable update after galleryLAB quits: a short
+ * Windows PowerShell script, started fully detached (a non-detached child is
+ * killed with galleryLAB) with no window, and every path passed through the
+ * environment so nothing needs quoting and any Unicode path works.
  *
  *   GLAB_APP_PID     galleryLAB's main process, waited for first
  *   GLAB_READY       the verified new exe
- *   GLAB_READY_META  its version file, removed once the move succeeds
+ *   GLAB_READY_META  its version file, removed once the swap succeeds
  *   GLAB_EXE         the path to replace (the exe the user runs)
  *   GLAB_RELAUNCH    1 to start the new build afterwards
+ *
+ * The swap uses File.Replace (ReplaceFile), which swaps in the new file in
+ * one step, retried while the portable launcher still holds the old one.
  */
 export const HELPER_SCRIPT = [
-  '@echo off',
-  'setlocal EnableExtensions DisableDelayedExpansion',
-  'rem galleryLAB portable update helper (paths come from the environment)',
-  'set /a GLAB_WAITS=0',
-  ':waitapp',
-  'tasklist /FI "PID eq %GLAB_APP_PID%" /NH 2>nul | find " %GLAB_APP_PID% " >nul',
-  'if errorlevel 1 goto swap',
-  'set /a GLAB_WAITS+=1',
-  'if %GLAB_WAITS% geq 120 goto swap',
-  'ping -n 2 127.0.0.1 >nul',
-  'goto waitapp',
-  ':swap',
-  'set /a GLAB_TRIES=0',
-  ':tryswap',
-  'rem once the verified download is gone from beside the exe, the move has happened',
-  'if not exist "%GLAB_READY%" goto moved',
-  'move /y "%GLAB_READY%" "%GLAB_EXE%" >nul 2>&1',
-  'if not errorlevel 1 goto moved',
-  'set /a GLAB_TRIES+=1',
-  'if %GLAB_TRIES% geq 120 goto done',
-  'ping -n 2 127.0.0.1 >nul',
-  'goto tryswap',
-  ':moved',
-  'del /f /q "%GLAB_READY_META%" >nul 2>&1',
-  'if "%GLAB_RELAUNCH%"=="1" start "" "%GLAB_EXE%"',
-  ':done',
-  '(goto) 2>nul & del /f /q "%~f0"',
+  "$ErrorActionPreference = 'SilentlyContinue'",
+  '$ready = $env:GLAB_READY',
+  '$exe = $env:GLAB_EXE',
+  "$old = $exe + '.old'",
+  'Wait-Process -Id ([int]$env:GLAB_APP_PID) -Timeout 120',
+  'for ($i = 0; $i -lt 120; $i++) {',
+  '  if (-not (Test-Path -LiteralPath $ready)) { break }',
+  '  try {',
+  '    [System.IO.File]::Replace($ready, $exe, $old)',
+  '    break',
+  '  } catch {',
+  '    Start-Sleep -Seconds 1',
+  '  }',
+  '}',
+  'if (-not (Test-Path -LiteralPath $ready)) {',
+  '  Remove-Item -LiteralPath $env:GLAB_READY_META -Force',
+  '  for ($j = 0; $j -lt 30 -and (Test-Path -LiteralPath $old); $j++) {',
+  '    Remove-Item -LiteralPath $old -Force',
+  '    if (Test-Path -LiteralPath $old) { Start-Sleep -Seconds 1 }',
+  '  }',
+  "  if ($env:GLAB_RELAUNCH -eq '1') { Start-Process -FilePath $exe }",
+  '}',
   ''
 ].join('\r\n')
+
+/** HELPER_SCRIPT as a PowerShell -EncodedCommand argument (base64 of UTF-16LE). */
+export const encodedHelper = (): string => Buffer.from(HELPER_SCRIPT, 'utf16le').toString('base64')
 
 export function helperEnv(exePath: string, appPid: number, relaunch: boolean): Record<string, string> {
   const { ready, readyMeta } = sidecars(exePath)
@@ -176,6 +180,28 @@ export function helperEnv(exePath: string, appPid: number, relaunch: boolean): R
     GLAB_READY_META: readyMeta,
     GLAB_EXE: exePath,
     GLAB_RELAUNCH: relaunch ? '1' : '0'
+  }
+}
+
+/** Times the helper has been started for the waiting update; after two failures, stop offering it. */
+export async function recordAttempt(exePath: string): Promise<number> {
+  const { readyMeta } = sidecars(exePath)
+  try {
+    const meta = JSON.parse(await fs.readFile(readyMeta, 'utf8')) as Record<string, unknown>
+    const attempts = (typeof meta['attempts'] === 'number' ? meta['attempts'] : 0) + 1
+    await fs.writeFile(readyMeta, JSON.stringify({ ...meta, attempts }))
+    return attempts
+  } catch {
+    return 1
+  }
+}
+
+export async function attemptsSoFar(exePath: string): Promise<number> {
+  try {
+    const meta = JSON.parse(await fs.readFile(sidecars(exePath).readyMeta, 'utf8')) as Record<string, unknown>
+    return typeof meta['attempts'] === 'number' ? meta['attempts'] : 0
+  } catch {
+    return 0
   }
 }
 

@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { AppSettings, DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION } from '@shared/schemas'
 import { readJsonVersioned, writeJsonAtomic } from '@shared/node/atomic-json'
+import { preserveUnreadable } from './library'
 
 /** App-wide settings live in userData, never inside a Library or project. */
 export class SettingsStore {
@@ -12,7 +13,9 @@ export class SettingsStore {
     try {
       this.current = (await readJsonVersioned(this.file, AppSettings, SETTINGS_SCHEMA_VERSION)) ?? DEFAULT_SETTINGS
     } catch {
-      // A damaged settings file should never stop the app from starting.
+      // A damaged (or newer) settings file should never stop the app from starting,
+      // and is kept aside rather than overwritten by the next change.
+      await preserveUnreadable(this.file)
       this.current = DEFAULT_SETTINGS
     }
     return this.current

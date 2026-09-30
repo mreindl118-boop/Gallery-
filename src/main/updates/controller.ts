@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app, net } from 'electron'
 import { NsisUpdater } from 'electron-updater'
@@ -12,10 +11,12 @@ import {
   cleanupLeftovers,
   downloadVerified,
   fetchFeed,
+  attemptsSoFar,
+  encodedHelper,
   hasReadyUpdate,
-  HELPER_SCRIPT,
   helperEnv,
   readyVersion,
+  recordAttempt,
   type FetchLike
 } from './portable-core'
 
@@ -24,6 +25,8 @@ const EVERY_MS = 4 * 60 * 60 * 1000
 
 const OFFLINE_MESSAGE = 'galleryLAB couldn’t check for updates. Check your internet connection; it tries again later.'
 const DOWNLOAD_MESSAGE = 'The update couldn’t be downloaded. galleryLAB tries again later, or you can try now.'
+const STUCK_MESSAGE =
+  'galleryLAB downloaded an update but couldn’t finish installing it here. Download the new version from the releases page and replace this file with it.'
 
 interface Backend {
   readonly kind: UpdateStatus['kind']
@@ -252,6 +255,7 @@ class PortableBackend implements Backend {
   readonly kind = 'portable' as const
   private autoDownload = true
   private handedOff = false
+  private stuck = false
   private pending: PortableFeed | null = null
   private readonly fetchFn: FetchLike = (url) => net.fetch(url, { headers: { 'Cache-Control': 'no-cache' } })
 
@@ -265,7 +269,14 @@ class PortableBackend implements Backend {
     await cleanupLeftovers(this.exePath, app.getVersion())
     const waiting = await readyVersion(this.exePath)
     if (waiting && compareVersions(waiting, app.getVersion()) > 0) {
-      updateLog('info', `update ${waiting} is waiting beside ${this.exePath}`)
+      const attempts = await attemptsSoFar(this.exePath)
+      updateLog('info', `update ${waiting} is waiting beside ${this.exePath} (${attempts} earlier attempts)`)
+      if (attempts >= 2) {
+        // The helper was started but the swap never happened (for example PowerShell is blocked).
+        this.stuck = true
+        this.patch({ phase: 'error', version: waiting, message: STUCK_MESSAGE })
+        return
+      }
       this.patch({ phase: 'ready', version: waiting, percent: 100 })
     }
   }
@@ -282,6 +293,10 @@ class PortableBackend implements Backend {
         return
       }
       this.pending = feed
+      if (this.stuck) {
+        this.patch({ phase: 'error', version: feed.version, message: STUCK_MESSAGE, lastChecked: nowIso() })
+        return
+      }
       if ((await readyVersion(this.exePath)) === feed.version) {
         this.patch({ phase: 'ready', version: feed.version, percent: 100, lastChecked: nowIso() })
         return
@@ -337,21 +352,38 @@ class PortableBackend implements Backend {
    */
   private startHelper(relaunch: boolean): boolean {
     if (!hasReadyUpdate(this.exePath)) return false
+    const root = process.env['SystemRoot'] ?? 'C:\\Windows'
+    const powershell = join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    if (!existsSync(powershell)) {
+      updateLog('error', `PowerShell not found at ${powershell}`)
+      return false
+    }
     try {
-      const script = join(tmpdir(), `galleryLAB-update-${process.pid}.cmd`)
-      writeFileSync(script, HELPER_SCRIPT, 'ascii')
       const env: NodeJS.ProcessEnv = { ...process.env, ...helperEnv(this.exePath, process.pid, relaunch) }
       delete env['PORTABLE_EXECUTABLE_FILE']
       delete env['PORTABLE_EXECUTABLE_DIR']
       delete env['PORTABLE_EXECUTABLE_APP_FILENAME']
-      spawn(process.env['ComSpec'] ?? 'cmd.exe', ['/d', '/c', script], {
-        env,
-        stdio: 'ignore',
-        windowsHide: true,
-        cwd: dirname(this.exePath)
-      }).unref()
+      // Detached: a non-detached child is placed in a job that Windows kills when galleryLAB exits.
+      const child = spawn(
+        powershell,
+        [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-WindowStyle',
+          'Hidden',
+          '-EncodedCommand',
+          encodedHelper()
+        ],
+        { env, stdio: 'ignore', detached: true, windowsHide: true, cwd: dirname(this.exePath) }
+      )
+      child.on('error', (err) => updateLog('error', 'update helper failed to start', err))
+      child.unref()
       this.handedOff = true
-      updateLog('info', `helper started (relaunch ${relaunch}) for ${this.exePath}`)
+      void recordAttempt(this.exePath)
+      updateLog('info', `helper started (pid ${child.pid ?? '?'}, relaunch ${relaunch}) for ${this.exePath}`)
       return true
     } catch (err) {
       updateLog('error', 'could not start the update helper', err)
@@ -364,8 +396,8 @@ class PortableBackend implements Backend {
   }
 
   onQuit(): void {
-    // Install on quit: the helper finishes the move after we exit, without relaunching.
-    if (!this.handedOff) this.startHelper(false)
+    // Install on quit: the helper finishes the swap after we exit, without relaunching.
+    if (!this.handedOff && !this.stuck) this.startHelper(false)
   }
 }
 

@@ -70,8 +70,9 @@ export function SettingsDialog() {
             const i = THEMES.findIndex((t) => t.value === pref)
             const next = THEMES[(i + step + THEMES.length) % THEMES.length]!
             void chooseTheme(next.value)
+            const group = e.currentTarget
             requestAnimationFrame(() =>
-              (e.currentTarget.querySelector(`[data-value="${next.value}"]`) as HTMLElement | null)?.focus()
+              (group.querySelector(`[data-value="${next.value}"]`) as HTMLElement | null)?.focus()
             )
           }}
         >

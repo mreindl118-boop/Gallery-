@@ -20,9 +20,12 @@ export async function writeJsonAtomic(file: string, data: unknown): Promise<void
   try {
     await handle.writeFile(body, 'utf8')
     await handle.sync()
-  } finally {
-    await handle.close()
+  } catch (err) {
+    await handle.close().catch(() => undefined)
+    await fs.rm(tmp, { force: true }).catch(() => undefined)
+    throw err
   }
+  await handle.close()
   try {
     await renameWithRetry(tmp, file)
   } catch (err) {

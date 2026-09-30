@@ -80,9 +80,18 @@ export const ProjectSummary = z.object({
 })
 export type ProjectSummary = z.infer<typeof ProjectSummary>
 
+/** Why a Library folder can't be used, for plain-language messages. */
+export const LibraryProblem = z.enum(['missing', 'unwritable', 'unreadable', 'inside-app'])
+export type LibraryProblem = z.infer<typeof LibraryProblem>
+
 export const LibraryStatus = z.discriminatedUnion('state', [
   z.object({ state: z.literal('unset'), defaultPath: z.string() }),
-  z.object({ state: z.literal('missing'), path: z.string(), defaultPath: z.string() }),
+  z.object({
+    state: z.literal('missing'),
+    path: z.string(),
+    defaultPath: z.string(),
+    problem: LibraryProblem.default('missing')
+  }),
   z.object({ state: z.literal('ready'), path: z.string() })
 ])
 export type LibraryStatus = z.infer<typeof LibraryStatus>

@@ -1,5 +1,5 @@
 import * as RD from '@radix-ui/react-dialog'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import './dialog.css'
 
 export function Dialog({
@@ -17,11 +17,29 @@ export function Dialog({
   children: ReactNode
   width?: number
 }) {
+  // Dialogs here open from state, not a Radix trigger, so remember where focus was and give it back.
+  const returnTo = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (open && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+      returnTo.current = document.activeElement
+    }
+  }, [open])
   return (
     <RD.Root open={open} onOpenChange={onOpenChange}>
       <RD.Portal>
         <RD.Overlay className="dialog-scrim" />
-        <RD.Content className="dialog" style={{ width }}>
+        <RD.Content
+          className="dialog"
+          style={{ width }}
+          onCloseAutoFocus={(e) => {
+            const target = returnTo.current
+            returnTo.current = null
+            if (target && target.isConnected) {
+              e.preventDefault()
+              target.focus()
+            }
+          }}
+        >
           <RD.Title className="dialog-title display">{title}</RD.Title>
           {description ? (
             <RD.Description className="dialog-description">{description}</RD.Description>

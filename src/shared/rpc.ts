@@ -37,7 +37,8 @@ export const rpcContract = {
   'library.status': m(none, LibraryStatus),
   /** Opens a folder picker; resolves to the chosen path or null. */
   'library.pickFolder': m(none, z.string().nullable()),
-  'library.setLocation': m(z.object({ path: z.string().min(1) }), LibraryStatus),
+  /** Switch to a Library folder. `create` makes it if absent (first run, picked folders), not when retrying a missing one. */
+  'library.setLocation': m(z.object({ path: z.string().min(1), create: z.boolean().default(true) }), LibraryStatus),
   'library.reveal': m(none, z.void()),
 
   'projects.list': m(none, z.array(ProjectSummary)),

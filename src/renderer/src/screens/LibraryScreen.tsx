@@ -34,7 +34,10 @@ export function LibraryScreen() {
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'n') {
+      const typing = e.target instanceof HTMLElement && e.target.closest('input, textarea, [contenteditable="true"]')
+      const modal = document.querySelector('[role="dialog"], [role="menu"]')
+      if (typing || modal) return
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault()
         void createProject()
       }
@@ -82,7 +85,11 @@ export function LibraryScreen() {
   const rename = async (project: ProjectSummary, name: string | null) => {
     set({ renaming: null })
     const card = cards.current.get(project.id)
-    requestAnimationFrame(() => card?.focus())
+    // Give focus back to the card only if it was lost (Enter/Escape), not when the user clicked elsewhere.
+    requestAnimationFrame(() => {
+      const active = document.activeElement
+      if (!active || active === document.body) card?.focus()
+    })
     if (!name) return
     try {
       await window.gallery.invoke('projects.rename', { id: project.id, name })
@@ -122,9 +129,7 @@ export function LibraryScreen() {
             <Plinth className="library-empty-plinth" size={170} height={26} />
             <div className="library-empty-text">
               <h1 className="library-empty-title display">Your Library is empty</h1>
-              <p className="library-empty-body">
-                Create a project, then drop photos or folders anywhere in the window.
-              </p>
+              <p className="library-empty-body">Create a project to begin. Adding photos arrives in the next update.</p>
               <Button variant="primary" onClick={createProject}>
                 New project
               </Button>

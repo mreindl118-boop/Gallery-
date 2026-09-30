@@ -78,9 +78,12 @@ export class Library {
 
   private async rescanNow(): Promise<ProjectSummary[]> {
     await fs.mkdir(this.root, { recursive: true })
-    const stored = await readJsonVersioned(join(this.root, LIBRARY_FILE), LibraryFile, LIBRARY_SCHEMA_VERSION).catch(
-      () => null
-    )
+    const registryFile = join(this.root, LIBRARY_FILE)
+    const stored = await readJsonVersioned(registryFile, LibraryFile, LIBRARY_SCHEMA_VERSION).catch(async () => {
+      // Unreadable, or written by a newer galleryLAB: keep it aside rather than overwrite it.
+      await preserveUnreadable(registryFile)
+      return null
+    })
 
     const dirents = await fs.readdir(this.root, { withFileTypes: true })
     const folders = dirents
@@ -157,16 +160,22 @@ export class Library {
 
   rename(id: string, name: string): Promise<ProjectSummary> {
     return this.serial(async () => {
-      const entry = this.require(id)
+      const entry = await this.requireOnDisk(id)
       const target = uniqueFolderName(folderNameFor(name), await this.folderNames(), entry.folder)
       const from = join(this.root, entry.folder)
       if (target !== entry.folder) {
         const to = join(this.root, target)
         if (target.toLowerCase() === entry.folder.toLowerCase()) {
-          // Case-only rename: NTFS needs a hop through a temporary name.
+          // Case-only rename: NTFS needs a hop through a temporary name. If the second step
+          // fails, put the folder back so the project never disappears into the hop name.
           const hop = join(this.root, `.${target}.${randomUUID().slice(0, 8)}.renaming`)
           await renameFolder(from, hop)
-          await renameFolder(hop, to)
+          try {
+            await renameFolder(hop, to)
+          } catch (err) {
+            await renameFolder(hop, from).catch(() => undefined)
+            throw err
+          }
         } else {
           await renameFolder(from, to)
         }
@@ -182,8 +191,16 @@ export class Library {
 
   trash(id: string): Promise<void> {
     return this.serial(async () => {
-      const entry = this.require(id)
-      await this.deps.trash(join(this.root, entry.folder))
+      const entry = await this.requireOnDisk(id)
+      try {
+        await this.deps.trash(join(this.root, entry.folder))
+      } catch {
+        // Removable drives and network folders have no Recycle Bin. Never fall back to deleting.
+        throw new GalleryError(
+          'trash-failed',
+          `Windows couldn’t move “${entry.project.name}” to the Recycle Bin. Drives such as USB sticks and network folders don’t have one. If you’re sure, delete the folder “${entry.folder}” in Explorer.`
+        )
+      }
       this.entries.delete(id)
       this.order = this.order.filter((x) => x !== id)
       await this.persist()
@@ -208,6 +225,28 @@ export class Library {
         'That project is no longer in the Library. It may have been moved or deleted outside galleryLAB.'
       )
     return e
+  }
+
+  /**
+   * The entry for a destructive operation, confirmed against the folder on
+   * disk: if the folder was swapped or edited outside galleryLAB, refresh
+   * instead of acting on the wrong project.
+   */
+  private async requireOnDisk(id: string): Promise<Entry> {
+    const entry = this.require(id)
+    const onDisk = await readJsonVersioned(
+      join(this.root, entry.folder, PROJECT_FILE),
+      ProjectFile,
+      PROJECT_SCHEMA_VERSION
+    ).catch(() => null)
+    if (!onDisk || onDisk.id !== id) {
+      await this.rescanNow()
+      throw new GalleryError(
+        'changed-on-disk',
+        'That project changed on disk outside galleryLAB. The Library has been refreshed; try again.'
+      )
+    }
+    return entry
   }
 
   private async folderNames(): Promise<string[]> {
@@ -263,4 +302,15 @@ async function renameFolder(from: string, to: string): Promise<void> {
       throw err
     }
   }
+}
+
+/** Move an unreadable JSON file aside (name.unreadable-<time>.json) so it is never silently overwritten. */
+export async function preserveUnreadable(file: string): Promise<void> {
+  try {
+    await fs.access(file)
+  } catch {
+    return
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  await fs.rename(file, file.replace(/\.json$/, `.unreadable-${stamp}.json`)).catch(() => undefined)
 }

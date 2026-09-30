@@ -63,7 +63,11 @@ export const ProjectCard = forwardRef<HTMLElement, ProjectCardProps>(function Pr
         </article>
       </CM.Trigger>
       <CM.Portal>
-        <CM.Content className="menu">
+        <CM.Content
+          className="menu"
+          // Focus moves to whatever the chosen item opens (the rename field), not back to the card.
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
           <CM.Item className="menu-item" onSelect={onStartRename}>
             Rename
             <span className="menu-key">F2</span>
@@ -88,8 +92,14 @@ function RenameField({ initial, onDone }: { initial: string; onDone: (name: stri
   const done = useRef(false)
 
   useEffect(() => {
-    input.current?.focus()
-    input.current?.select()
+    // After a menu closes, focus may still be settling; take it on the next frame too.
+    const take = () => {
+      input.current?.focus()
+      input.current?.select()
+    }
+    take()
+    const raf = requestAnimationFrame(take)
+    return () => cancelAnimationFrame(raf)
   }, [])
 
   const finish = (name: string | null) => {

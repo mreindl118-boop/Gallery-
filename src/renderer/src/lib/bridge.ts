@@ -5,6 +5,7 @@ import { reportError, useApp } from '../state/store'
 export async function boot(): Promise<void> {
   const g = window.gallery
   const { set } = useApp.getState()
+  let engineFromEvent = false
 
   g.onEvent((e) => {
     switch (e.type) {
@@ -21,6 +22,7 @@ export async function boot(): Promise<void> {
         set({ themePreference: e.settings.theme })
         break
       case 'engine.state':
+        engineFromEvent = true
         set({ engine: e.state })
         break
       case 'updates.status':
@@ -40,7 +42,8 @@ export async function boot(): Promise<void> {
   const projects = status.state === 'ready' ? await g.invoke('projects.list') : []
   set({
     version: info.version,
-    engine: info.engine,
+    // An engine event that arrived while booting is newer than the app.info snapshot.
+    ...(engineFromEvent ? {} : { engine: info.engine }),
     themePreference: settings.theme,
     status,
     projects,
