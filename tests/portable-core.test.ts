@@ -122,7 +122,15 @@ describe('portable update helper', () => {
   it('is plain ASCII PowerShell with no paths of its own, passed as an encoded command', () => {
     expect([...HELPER_SCRIPT].every((c) => c.charCodeAt(0) < 128)).toBe(true)
     expect(HELPER_SCRIPT).not.toMatch(/[A-Za-z]:\\/)
-    for (const v of ['GLAB_READY', 'GLAB_EXE', 'GLAB_READY_META', 'GLAB_APP_PID', 'GLAB_RELAUNCH']) {
+    for (const v of [
+      'GLAB_READY',
+      'GLAB_EXE',
+      'GLAB_READY_META',
+      'GLAB_APP_PID',
+      'GLAB_LAUNCHER_PID',
+      'GLAB_LOG',
+      'GLAB_RELAUNCH'
+    ]) {
       expect(HELPER_SCRIPT).toContain(`$env:${v}`)
     }
     // Paths are only ever used literally (no wildcard expansion of [ ] in folder names).
@@ -135,9 +143,11 @@ describe('portable update helper', () => {
 
   it('passes the exact exe path and its sidecars through the environment', () => {
     const odd = join(dir, 'Pfad mit Ümlaut & 100% [x]', 'galleryLAB-0.1.1-portable.exe')
-    const env = helperEnv(odd, 4242, true)
+    const env = helperEnv(odd, 4242, true, { launcherPid: 4000, log: 'C:\\x\\updates.log' })
     expect(env).toEqual({
       GLAB_APP_PID: '4242',
+      GLAB_LAUNCHER_PID: '4000',
+      GLAB_LOG: 'C:\\x\\updates.log',
       GLAB_READY: `${odd}.update`,
       GLAB_READY_META: `${odd}.update.json`,
       GLAB_EXE: odd,

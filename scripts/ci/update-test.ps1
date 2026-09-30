@@ -96,7 +96,8 @@ function Show-Diagnostics {
   foreach ($log in @((Join-Path $userData 'logs\updates.log'), (Join-Path $userData 'logs\updates.log.1'))) {
     if (Test-Path -LiteralPath $log) { Write-Host "${log}:"; Get-Content -LiteralPath $log | ForEach-Object { Write-Host "  $_" } }
   }
-  Get-Process -Name 'galleryLAB', 'cmd' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host ("process {0} {1} {2}" -f $_.Id, $_.Name, $_.Path) }
+  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'galleryLAB*' -or $_.Name -eq 'powershell' } |
+    ForEach-Object { Write-Host ("process {0} {1} {2}" -f $_.Id, $_.Name, $_.Path) }
 }
 
 $tools = $null; $dir1 = $null; $dir2 = $null

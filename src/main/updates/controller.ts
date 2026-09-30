@@ -5,7 +5,7 @@ import { app, net } from 'electron'
 import { NsisUpdater } from 'electron-updater'
 import { compareVersions, portableFeedUrls, type PortableFeed } from '@shared/release'
 import type { UpdateStatus } from '@shared/schemas'
-import { updateLog } from './log'
+import { updateLog, updateLogPath } from './log'
 import {
   canWriteBeside,
   cleanupLeftovers,
@@ -394,7 +394,10 @@ class PortableBackend implements Backend {
       return false
     }
     try {
-      const env: NodeJS.ProcessEnv = { ...process.env, ...helperEnv(this.exePath, process.pid, relaunch) }
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        ...helperEnv(this.exePath, process.pid, relaunch, { launcherPid: process.ppid, log: updateLogPath() })
+      }
       delete env['PORTABLE_EXECUTABLE_FILE']
       delete env['PORTABLE_EXECUTABLE_DIR']
       delete env['PORTABLE_EXECUTABLE_APP_FILENAME']

@@ -135,6 +135,8 @@ export async function cleanupLeftovers(exePath: string, currentVersion: string):
  * environment so nothing needs quoting and any Unicode path works.
  *
  *   GLAB_APP_PID     galleryLAB's main process, waited for first
+ *   GLAB_LAUNCHER_PID  the portable launcher (galleryLAB's parent), which holds the exe until it exits
+ *   GLAB_LOG         the updater log to append progress to
  *   GLAB_READY       the verified new exe
  *   GLAB_READY_META  its version file, removed once the swap succeeds
  *   GLAB_EXE         the path to replace (the exe the user runs)
@@ -144,27 +146,47 @@ export async function cleanupLeftovers(exePath: string, currentVersion: string):
  * one step, retried while the portable launcher still holds the old one.
  */
 export const HELPER_SCRIPT = [
-  "$ErrorActionPreference = 'SilentlyContinue'",
+  "$ErrorActionPreference = 'Continue'",
+  'function Log([string]$m) {',
+  '  if ($env:GLAB_LOG) {',
+  "    try { Add-Content -LiteralPath $env:GLAB_LOG -Value ((Get-Date).ToUniversalTime().ToString('o') + ' HELPER ' + $m) } catch { }",
+  '  }',
+  '}',
   '$ready = $env:GLAB_READY',
   '$exe = $env:GLAB_EXE',
   "$old = $exe + '.old'",
-  'Wait-Process -Id ([int]$env:GLAB_APP_PID) -Timeout 120',
+  'Log ("started for " + $exe + " (app " + $env:GLAB_APP_PID + ", launcher " + $env:GLAB_LAUNCHER_PID + ")")',
+  'foreach ($p in @($env:GLAB_APP_PID, $env:GLAB_LAUNCHER_PID)) {',
+  '  if ($p -and [int]$p -gt 0) {',
+  '    try { Wait-Process -Id ([int]$p) -Timeout 120 -ErrorAction Stop } catch { }',
+  '  }',
+  '}',
+  'Log "galleryLAB and its launcher have exited"',
+  '$done = $false',
   'for ($i = 0; $i -lt 120; $i++) {',
-  '  if (-not (Test-Path -LiteralPath $ready)) { break }',
+  '  if (-not (Test-Path -LiteralPath $ready)) { $done = $true; break }',
   '  try {',
   '    [System.IO.File]::Replace($ready, $exe, $old)',
+  '    $done = $true',
+  '    Log ("replaced on attempt " + ($i + 1))',
   '    break',
   '  } catch {',
+  '    if ($i -lt 3 -or $i % 20 -eq 0) { Log ("attempt " + ($i + 1) + " failed: " + $_.Exception.Message) }',
   '    Start-Sleep -Seconds 1',
   '  }',
   '}',
-  'if (-not (Test-Path -LiteralPath $ready)) {',
-  '  Remove-Item -LiteralPath $env:GLAB_READY_META -Force',
+  'if ($done) {',
+  '  Remove-Item -LiteralPath $env:GLAB_READY_META -Force -ErrorAction SilentlyContinue',
   '  for ($j = 0; $j -lt 30 -and (Test-Path -LiteralPath $old); $j++) {',
-  '    Remove-Item -LiteralPath $old -Force',
+  '    Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue',
   '    if (Test-Path -LiteralPath $old) { Start-Sleep -Seconds 1 }',
   '  }',
-  "  if ($env:GLAB_RELAUNCH -eq '1') { Start-Process -FilePath $exe }",
+  "  if ($env:GLAB_RELAUNCH -eq '1') {",
+  '    Log "starting the new build"',
+  '    Start-Process -FilePath $exe',
+  '  }',
+  '} else {',
+  '  Log "gave up: the old build stayed in place"',
   '}',
   ''
 ].join('\r\n')
@@ -172,10 +194,17 @@ export const HELPER_SCRIPT = [
 /** HELPER_SCRIPT as a PowerShell -EncodedCommand argument (base64 of UTF-16LE). */
 export const encodedHelper = (): string => Buffer.from(HELPER_SCRIPT, 'utf16le').toString('base64')
 
-export function helperEnv(exePath: string, appPid: number, relaunch: boolean): Record<string, string> {
+export function helperEnv(
+  exePath: string,
+  appPid: number,
+  relaunch: boolean,
+  extra: { launcherPid?: number; log?: string } = {}
+): Record<string, string> {
   const { ready, readyMeta } = sidecars(exePath)
   return {
     GLAB_APP_PID: String(appPid),
+    GLAB_LAUNCHER_PID: String(extra.launcherPid ?? 0),
+    GLAB_LOG: extra.log ?? '',
     GLAB_READY: ready,
     GLAB_READY_META: readyMeta,
     GLAB_EXE: exePath,
