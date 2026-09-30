@@ -1,11 +1,11 @@
 import { z } from 'zod'
 
 /**
- * Where published builds live. The source repository is private, so
- * installers and update feeds are published to a public releases-only
- * repository. Must match `publish` in electron-builder.yml (a test checks).
+ * Where published builds live: this repository's own GitHub Releases, which
+ * must be public so installed apps can fetch updates without a token. Must
+ * match `publish` in electron-builder.yml (a test checks).
  */
-export const RELEASES_REPO = { owner: 'mreindl118-boop', repo: 'galleryLAB-releases' } as const
+export const RELEASES_REPO = { owner: 'mreindl118-boop', repo: 'Gallery-' } as const
 
 export const releasesPageUrl = (): string => `https://github.com/${RELEASES_REPO.owner}/${RELEASES_REPO.repo}/releases`
 

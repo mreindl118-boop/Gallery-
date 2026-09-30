@@ -17,13 +17,13 @@ asarUnpack:
   - '**/node_modules/better-sqlite3/**'
   - '**/node_modules/onnxruntime-node/**'
   - '**/*.node'
-# Update feed: the public releases-only repo (source stays private). electron-builder
+# Update feed: this repository's GitHub Releases (the repo must be public). electron-builder
 # writes app-update.yml into the app and latest.yml + a blockmap next to the installer.
 # Must match RELEASES_REPO in src/shared/release.ts.
 publish:
   provider: github
   owner: mreindl118-boop
-  repo: galleryLAB-releases
+  repo: Gallery-
   releaseType: release
 npmRebuild: true
 nodeGypRebuild: false

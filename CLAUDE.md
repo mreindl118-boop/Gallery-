@@ -77,11 +77,11 @@ smoke-tests the unpacked build, installs silently and launches, and starts the p
 - Bump `version` in package.json, add `.github/release-notes/v<version>.md`, push, then run the **Release**
   workflow (Actions → Release → version) or push tag `v<version>`. It builds on Windows, runs every check,
   smoke-tests installed/portable builds, runs `scripts/ci/update-test.ps1` (auto-update into a custom folder,
-  manual upgrade, portable self-replace), then publishes to the public repo
-  `mreindl118-boop/galleryLAB-releases` using the `RELEASES_TOKEN` Actions secret.
-- The source repo is private; installed apps read updates from the public releases repo (electron-builder
-  `publish` → `app-update.yml`; `latest.yml` + blockmap for the installer; `latest-portable.json` for the
-  portable exe). `RELEASES_REPO` in `src/shared/release.ts` must match `electron-builder.yml` (a test checks).
+  manual upgrade, portable self-replace), then publishes to this repository's GitHub Releases with the
+  workflow's own token.
+- Installed apps read updates from this repo's Releases, so the repo must stay public (the release job
+  refuses to run otherwise). electron-builder `publish` → `app-update.yml`; `latest.yml` + blockmap for the
+  installer; `latest-portable.json` for the portable exe. `RELEASES_REPO` in `src/shared/release.ts` must match `electron-builder.yml` (a test checks).
 - Updates never move the app: the installer is pinned to the running exe's folder; the portable exe is
   swapped at its own path. User data (`%APPDATA%\galleryLAB`) and the Library are outside both.
 

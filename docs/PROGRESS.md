@@ -46,8 +46,8 @@ QA log (M0):
 - [x] 0.1.0 published (private repo release, installer + portable + checksums)
 - [x] Automatic updates (0.1.1): installer via electron-updater pinned to its install folder; portable replaces itself at the same path; Settings → Updates
 - [ ] Windows CI update-in-place test green (installer auto-update into custom folder, manual upgrade, portable)
-- [ ] Owner setup: public repo `mreindl118-boop/galleryLAB-releases` (with README) and Actions secret `RELEASES_TOKEN`
-- [ ] 0.1.1 published to galleryLAB-releases
+- [ ] Owner setup: make `mreindl118-boop/Gallery-` public (the release workflow checks)
+- [ ] 0.1.1 published to Gallery- Releases
 
 ## M1 Ingest at scale
 

@@ -31,19 +31,20 @@ describe('compareVersions', () => {
 })
 
 describe('update feeds', () => {
-  it('points at the public releases repo configured for electron-builder', () => {
+  it('points at the same releases repo as electron-builder', () => {
     const yml = readFileSync(resolve(__dirname, '../electron-builder.yml'), 'utf8')
     const publish = yml.slice(yml.indexOf('publish:'))
-    expect(publish).toMatch(new RegExp(`owner:\\s*${RELEASES_REPO.owner}\\b`))
-    expect(publish).toMatch(new RegExp(`repo:\\s*${RELEASES_REPO.repo}\\b`))
+    const escape = (v: string) => v.replace(/[.*+?^$(){}|[\]\\-]/g, '\\$&')
+    const line = (key: string, value: string) => new RegExp(`^\\s*${key}:\\s*${escape(value)}\\s*$`, 'm')
+    expect(publish).toMatch(line('owner', RELEASES_REPO.owner))
+    expect(publish).toMatch(line('repo', RELEASES_REPO.repo))
     expect(publish).toMatch(/provider:\s*github/)
   })
 
   it('builds GitHub and test-feed URLs', () => {
     expect(portableFeedUrls(null, '0.1.1', 'galleryLAB-0.1.1-portable.exe')).toEqual({
-      feed: 'https://github.com/mreindl118-boop/galleryLAB-releases/releases/latest/download/latest-portable.json',
-      asset:
-        'https://github.com/mreindl118-boop/galleryLAB-releases/releases/download/v0.1.1/galleryLAB-0.1.1-portable.exe'
+      feed: 'https://github.com/mreindl118-boop/Gallery-/releases/latest/download/latest-portable.json',
+      asset: 'https://github.com/mreindl118-boop/Gallery-/releases/download/v0.1.1/galleryLAB-0.1.1-portable.exe'
     })
     expect(portableFeedUrls('http://127.0.0.1:8765', '9.0.0', 'a b.exe')).toEqual({
       feed: 'http://127.0.0.1:8765/latest-portable.json',
