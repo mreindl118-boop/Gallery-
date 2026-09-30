@@ -10,7 +10,9 @@ export function Notices() {
   const reduced = useReducedMotion()
 
   useEffect(() => {
-    const timers = notices.filter((n) => n.tone === 'info').map((n) => setTimeout(() => dismiss(n.id), 5000))
+    const timers = notices
+      .filter((n) => n.tone === 'info' && !n.action)
+      .map((n) => setTimeout(() => dismiss(n.id), 5000))
     return () => timers.forEach(clearTimeout)
   }, [notices, dismiss])
 
@@ -28,6 +30,17 @@ export function Notices() {
             transition={{ type: 'spring', stiffness: 520, damping: 46, mass: 1 }}
           >
             <p>{n.text}</p>
+            {n.action && (
+              <button
+                className="notice-action"
+                onClick={() => {
+                  dismiss(n.id)
+                  n.action!.run()
+                }}
+              >
+                {n.action.label}
+              </button>
+            )}
             <button className="notice-close" onClick={() => dismiss(n.id)}>
               Dismiss
             </button>

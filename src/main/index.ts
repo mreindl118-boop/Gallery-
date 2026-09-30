@@ -1,6 +1,7 @@
 import { watch, type FSWatcher, promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, Menu, nativeTheme, shell } from 'electron'
+import { releasesPageUrl } from '@shared/release'
 import { EVENT_CHANNEL, GalleryError, type MainEvent } from '@shared/rpc'
 import type { LibraryStatus } from '@shared/schemas'
 import { EngineHost } from './engine-host'
@@ -8,15 +9,37 @@ import { Library } from './library'
 import { handleGalleryScheme, registerGalleryScheme } from './protocol'
 import { registerRpc } from './rpc'
 import { SettingsStore } from './settings'
+import { UpdateController } from './updates/controller'
 import { applyChromeTheme, createMainWindow, currentTheme, lockDownSession } from './window'
 
 if (process.env['GALLERYLAB_USER_DATA']) app.setPath('userData', process.env['GALLERYLAB_USER_DATA'])
 registerGalleryScheme()
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit()
-} else {
-  void main()
+// After a portable self-update the new build is started by the old one; wait
+// for the old process to exit so the single-instance lock is free.
+void waitForExit(Number(process.env['GALLERYLAB_WAIT_FOR_PID'])).then(() => {
+  delete process.env['GALLERYLAB_WAIT_FOR_PID']
+  if (!app.requestSingleInstanceLock()) {
+    app.quit()
+  } else {
+    main().catch((err) => {
+      console.error('[main] startup failed', err)
+      app.exit(1)
+    })
+  }
+})
+
+async function waitForExit(pid: number, timeoutMs = 20_000): Promise<void> {
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return
+  const until = Date.now() + timeoutMs
+  while (Date.now() < until) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return
+    }
+    await new Promise((r) => setTimeout(r, 150))
+  }
 }
 
 async function main(): Promise<void> {
@@ -96,6 +119,7 @@ async function main(): Promise<void> {
 
   await settings.load()
   nativeTheme.themeSource = settings.get().theme
+  const updates = new UpdateController(settings.get().autoUpdate, (status) => emit({ type: 'updates.status', status }))
   const libPath = settings.get().libraryPath
   if (libPath) await openLibrary(libPath)
 
@@ -153,7 +177,18 @@ async function main(): Promise<void> {
         if (!root) throw new GalleryError('not-found', 'That project is no longer in the Library.')
         shell.showItemInFolder(join(root, 'project.json'))
       },
-      'engine.ping': () => engine.request('ping')
+      'engine.ping': () => engine.request('ping'),
+      'updates.status': () => updates.get(),
+      'updates.check': () => updates.check(),
+      'updates.download': () => updates.download(),
+      'updates.install': () => updates.install(),
+      'updates.setAuto': async ({ auto }) => {
+        await settings.update({ autoUpdate: auto })
+        return updates.setAuto(auto)
+      },
+      'updates.openReleases': async () => {
+        await shell.openExternal(releasesPageUrl())
+      }
     },
     (event) => {
       const frame = event.senderFrame
@@ -172,6 +207,7 @@ async function main(): Promise<void> {
   lockDownSession()
   handleGalleryScheme((id) => library?.projectRoot(id) ?? null)
   engine.start()
+  void updates.start()
 
   const open = (): void => {
     win = createMainWindow()
@@ -204,4 +240,5 @@ async function main(): Promise<void> {
     libraryWatcher?.close()
     engine.stop()
   })
+  app.on('will-quit', () => updates.onQuit())
 }

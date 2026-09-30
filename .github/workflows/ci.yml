@@ -64,6 +64,7 @@ jobs:
           $portable = Get-ChildItem dist -Filter '*-portable.exe' | Select-Object -First 1
           $env:GALLERYLAB_USER_DATA = Join-Path $env:RUNNER_TEMP 'portable-ud'
           $env:GALLERYLAB_HIDDEN = '1'
+          $env:GALLERYLAB_UPDATE_CHECK_DELAY_MS = '3600000'
           Start-Process -FilePath $portable.FullName
           $deadline = (Get-Date).AddSeconds(90)
           do {
@@ -73,6 +74,13 @@ jobs:
           } until (($running -and $settings) -or (Get-Date) -gt $deadline)
           if (-not ($running -and $settings)) { throw 'Portable build did not start' }
           Get-Process -Name 'galleryLAB' | Stop-Process -Force
+      - name: Update in place (installer, manual upgrade, portable)
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          node scripts/portable-feed.mjs "dist/galleryLAB-$v-portable.exe" dist
+          ./scripts/ci/build-newer.ps1 -Version 99.0.0 -Out dist-new
+          ./scripts/ci/update-test.ps1 -OldDist dist -OldVersion $v -NewDist dist-new -NewVersion 99.0.0
       - uses: actions/upload-artifact@v4
         with:
           name: galleryLAB-windows

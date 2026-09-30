@@ -20,7 +20,13 @@ export async function launch(opts: { userData?: string; env?: Record<string, str
   const app = await electron.launch({
     ...(executablePath ? { executablePath } : {}),
     args,
-    env: { ...process.env, GALLERYLAB_USER_DATA: userData, ...opts.env } as Record<string, string>
+    env: {
+      ...process.env,
+      GALLERYLAB_USER_DATA: userData,
+      // Keep packaged builds under test from checking the real update feed.
+      GALLERYLAB_UPDATE_CHECK_DELAY_MS: '3600000',
+      ...opts.env
+    } as Record<string, string>
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')

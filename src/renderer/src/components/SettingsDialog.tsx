@@ -2,6 +2,7 @@ import type { ThemePreference } from '@shared/schemas'
 import { useApp, reportError } from '../state/store'
 import { Button } from './Button'
 import { Dialog, DialogActions, DialogClose } from './Dialog'
+import { UpdatesSection } from './UpdatesSection'
 import './settings.css'
 
 const THEMES: Array<{ value: ThemePreference; label: string }> = [
@@ -102,6 +103,13 @@ export function SettingsDialog() {
           </Button>
           <Button onClick={changeLibrary}>Change location</Button>
         </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="set-updates">
+        <h3 id="set-updates" className="settings-heading">
+          Updates
+        </h3>
+        <UpdatesSection />
       </section>
 
       <section className="settings-section" aria-labelledby="set-about">

@@ -52,7 +52,9 @@ export const AppSettings = z.object({
   theme: ThemePreference,
   defaultImportMode: ImportMode,
   units: z.enum(['auto', 'cm', 'in']),
-  centerlineCm: z.number().min(100).max(200)
+  centerlineCm: z.number().min(100).max(200),
+  /** Download updates in the background and install them on quit. Added in 0.1.1; defaults on. */
+  autoUpdate: z.boolean().default(true)
 })
 export type AppSettings = z.infer<typeof AppSettings>
 
@@ -62,7 +64,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   defaultImportMode: 'copy',
   units: 'auto',
-  centerlineCm: 145
+  centerlineCm: 145,
+  autoUpdate: true
 }
 
 /** What the renderer sees of a project. */
@@ -86,3 +89,23 @@ export type LibraryStatus = z.infer<typeof LibraryStatus>
 
 export const EngineState = z.enum(['starting', 'ready', 'restarting', 'failed'])
 export type EngineState = z.infer<typeof EngineState>
+
+/**
+ * What the updater is doing. `kind` says which mechanism applies: the NSIS
+ * installer build (electron-updater), the portable exe (self-replacing), or
+ * none (development builds and other platforms).
+ */
+export const UpdateStatus = z.object({
+  kind: z.enum(['installer', 'portable', 'none']),
+  current: z.string(),
+  auto: z.boolean(),
+  phase: z.enum(['idle', 'checking', 'available', 'downloading', 'ready', 'up-to-date', 'error']),
+  /** The newer version, once one is known. */
+  version: z.string().nullable(),
+  /** Download progress 0–100 while downloading. */
+  percent: z.number().min(0).max(100).nullable(),
+  /** Plain-language error: what happened and what to do. */
+  message: z.string().nullable(),
+  lastChecked: z.string().nullable()
+})
+export type UpdateStatus = z.infer<typeof UpdateStatus>

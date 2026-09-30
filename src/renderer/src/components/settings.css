@@ -65,3 +65,54 @@
   color: var(--text);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
 }
+
+.settings-note-flush {
+  margin-top: 0;
+}
+
+.updates-line {
+  margin-bottom: var(--space-1);
+}
+
+.updates-progress {
+  height: 2px;
+  margin: var(--space-2) 0 var(--space-1);
+  background: var(--divider);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.updates-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--duration-panel) var(--ease-out);
+}
+
+.updates-actions {
+  margin-top: var(--space-3);
+}
+
+.updates-auto {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.updates-auto input {
+  margin: 3px 0 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.updates-auto > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.updates-auto-label {
+  font-weight: 500;
+}

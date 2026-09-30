@@ -6,7 +6,8 @@ import {
   ProjectId,
   ProjectName,
   ProjectSummary,
-  ThemePreference
+  ThemePreference,
+  UpdateStatus
 } from './schemas'
 
 /**
@@ -46,7 +47,18 @@ export const rpcContract = {
   'projects.reorder': m(z.object({ ids: z.array(ProjectId) }), z.array(ProjectSummary)),
   'projects.reveal': m(z.object({ id: ProjectId }), z.void()),
 
-  'engine.ping': m(none, EnginePing)
+  'engine.ping': m(none, EnginePing),
+
+  'updates.status': m(none, UpdateStatus),
+  /** Check now (downloads right away when automatic updates are on). */
+  'updates.check': m(none, UpdateStatus),
+  /** Download an available update (when automatic updates are off). */
+  'updates.download': m(none, UpdateStatus),
+  /** Quit, install the downloaded update in place and start galleryLAB again. */
+  'updates.install': m(none, z.void()),
+  'updates.setAuto': m(z.object({ auto: z.boolean() }), UpdateStatus),
+  /** Open the public releases page in the browser. */
+  'updates.openReleases': m(none, z.void())
 } as const
 
 export type RpcContract = typeof rpcContract
@@ -66,7 +78,8 @@ export const MainEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('library.status'), status: LibraryStatus }),
   z.object({ type: z.literal('theme.changed'), resolved: z.enum(['light', 'dark']) }),
   z.object({ type: z.literal('settings.changed'), settings: AppSettings }),
-  z.object({ type: z.literal('engine.state'), state: EngineState })
+  z.object({ type: z.literal('engine.state'), state: EngineState }),
+  z.object({ type: z.literal('updates.status'), status: UpdateStatus })
 ])
 export type MainEvent = z.infer<typeof MainEvent>
 

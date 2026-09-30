@@ -36,3 +36,13 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+.notice-action {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-size: var(--size-14);
+  font-weight: 600;
+  white-space: nowrap;
+}
