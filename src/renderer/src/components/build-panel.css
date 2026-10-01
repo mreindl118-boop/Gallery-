@@ -1,0 +1,74 @@
+.build-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-top: 1px solid var(--divider);
+  padding-top: var(--space-4);
+}
+
+.build-title {
+  font-size: var(--size-16);
+  font-weight: 500;
+  margin-bottom: var(--space-1);
+}
+
+.build-status {
+  font-size: var(--size-14);
+  line-height: 1.45;
+  max-width: 40ch;
+}
+
+.build-detail,
+.build-estimate {
+  font-size: var(--size-14);
+  color: var(--text-2);
+  max-width: 40ch;
+}
+
+/* A 2 px rule that fills with the accent, like the update download. */
+.build-bar {
+  height: 2px;
+  margin: var(--space-3) 0 var(--space-1);
+  background: var(--divider);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.build-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--duration-panel) var(--ease-out);
+}
+
+/* The three stages as quiet steps; the finished ones read in full text, the rest in secondary text. */
+.build-stages {
+  display: flex;
+  gap: var(--space-4);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--size-12);
+  color: var(--text-2);
+}
+
+.build-stage[data-done],
+.build-stage[data-current] {
+  color: var(--text);
+}
+
+.build-stage[data-done] {
+  text-decoration: underline;
+  text-decoration-color: var(--divider);
+  text-underline-offset: 4px;
+}
+
+.build-estimate {
+  margin-top: var(--space-3);
+}
+
+.build-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}

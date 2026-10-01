@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "notes": "Image providers for the build's generating stage. Endpoints, models and field names are data so they can be corrected without a code change. The user's key is never stored here; it travels in the Authorization header only.",
+  "retry": { "attempts": 3, "baseDelayMs": 1500, "maxDelayMs": 12000 },
+  "timeoutMs": 120000,
+  "stability": {
+    "label": "Stability AI",
+    "styleUrl": "https://api.stability.ai/v2beta/stable-image/control/style",
+    "generateUrl": "https://api.stability.ai/v2beta/stable-image/generate/core",
+    "outputFormat": "png",
+    "accept": "application/json",
+    "testAspectRatio": "1:1"
+  },
+  "openai": {
+    "label": "OpenAI",
+    "generateUrl": "https://api.openai.com/v1/images/generations",
+    "editUrl": "https://api.openai.com/v1/images/edits",
+    "model": "gpt-image-1",
+    "sizes": { "square": "1024x1024", "landscape": "1536x1024", "portrait": "1024x1536" },
+    "quality": "medium",
+    "testQuality": "low"
+  },
+  "xai": {
+    "label": "xAI",
+    "generateUrl": "https://api.x.ai/v1/images/generations",
+    "model": "grok-2-image",
+    "responseFormat": "b64_json"
+  }
+}

@@ -1,3 +1,4 @@
+import type { GenerationEstimate, GeneratorSettings } from '@shared/build'
 import type { ProjectSummary, UpdateStatus } from '@shared/schemas'
 import { whenInstalled } from '../components/UpdatesSection'
 import { emptyPhotoList, reportError, useApp } from '../state/store'
@@ -59,6 +60,7 @@ export async function boot(): Promise<void> {
     booted: true
   })
   readNewStatuses(projects)
+  void loadGenerator()
 }
 
 /* Import */
@@ -75,14 +77,23 @@ export async function readStatus(id: string): Promise<void> {
 
 /** Read the status of projects the store knows nothing about yet (after boot, when projects appear). */
 function readNewStatuses(projects: ProjectSummary[]): void {
-  const { progress } = useApp.getState()
-  for (const p of projects) if (progress[p.id] === undefined) void readStatus(p.id)
+  const { progress, builds } = useApp.getState()
+  for (const p of projects) {
+    if (progress[p.id] === undefined) void readStatus(p.id)
+    if (builds[p.id] === undefined) void readBuild(p.id)
+  }
 }
 
 function refreshAfterEngineStart(): void {
   const { projects, openProject } = useApp.getState()
-  for (const p of projects) void readStatus(p.id)
-  if (openProject) void loadPhotos(openProject)
+  for (const p of projects) {
+    void readStatus(p.id)
+    void readBuild(p.id)
+  }
+  if (openProject) {
+    void loadPhotos(openProject)
+    void loadAssets(openProject)
+  }
 }
 
 const PAGE = 5000
@@ -115,6 +126,8 @@ export function openProject(id: string): void {
   const { set } = useApp.getState()
   set({ openProject: id, returnFocus: id, dragging: false, dropProject: null })
   void loadPhotos(id)
+  void readBuild(id)
+  void loadAssets(id)
 }
 
 /** Back to the Library; the project's photos are dropped so memory stays flat. */
@@ -124,7 +137,9 @@ export function closeProject(): void {
   loadToken++
   const next = { ...photos }
   delete next[id]
-  set({ openProject: null, photos: next, dragging: false, dropProject: null })
+  const assets = { ...useApp.getState().assets }
+  delete assets[id]
+  set({ openProject: null, photos: next, assets, dragging: false, dropProject: null })
 }
 
 /** Start importing paths into a project; progress then arrives as engine events. */
@@ -164,6 +179,71 @@ export async function retryIssues(id: string, issueIds?: number[]): Promise<void
     await readStatus(id)
   } catch (err) {
     reportError(err)
+  }
+}
+
+/* Build */
+
+/** Read a project's build progress into the store. Failures leave `null` (the panel then shows nothing). */
+export async function readBuild(id: string): Promise<void> {
+  try {
+    useApp.getState().setBuild(await window.gallery.invoke('build.status', { id }))
+  } catch {
+    const { builds, set } = useApp.getState()
+    if (builds[id] === undefined) set({ builds: { ...builds, [id]: null } })
+  }
+}
+
+type BuildControl = 'build.start' | 'build.pause' | 'build.resume' | 'build.cancel'
+
+export async function controlBuild(id: string, method: BuildControl): Promise<void> {
+  try {
+    useApp.getState().setBuild(await window.gallery.invoke(method, { id }))
+  } catch (err) {
+    reportError(err)
+  }
+}
+
+/** Read an open project's generated assets; ones that arrive as events meanwhile merge in. */
+export async function loadAssets(id: string): Promise<void> {
+  try {
+    const assets = await window.gallery.invoke('build.assets', { id })
+    if (useApp.getState().openProject === id) useApp.getState().setAssets(id, assets)
+  } catch {
+    // The strip simply stays empty; the next build event or open reads again.
+  }
+}
+
+/** What the next generating run will cost; null when it can't be read (no project, engine busy). */
+export async function readEstimate(id: string): Promise<GenerationEstimate | null> {
+  try {
+    return await window.gallery.invoke('generator.estimate', { id })
+  } catch {
+    return null
+  }
+}
+
+/* Generator */
+
+export async function loadGenerator(): Promise<void> {
+  try {
+    useApp.getState().set({ generator: await window.gallery.invoke('generator.settings') })
+  } catch (err) {
+    reportError(err)
+  }
+}
+
+/** Run a generator call and keep the store's settings current. */
+export async function updateGenerator(call: Promise<GeneratorSettings>): Promise<boolean> {
+  try {
+    useApp.getState().set({ generator: await call })
+    // Each status request carries the current provider key to the engine, so a
+    // build that is waiting to generate can carry on with the new settings.
+    for (const p of useApp.getState().projects) void readBuild(p.id)
+    return true
+  } catch (err) {
+    reportError(err)
+    return false
   }
 }
 

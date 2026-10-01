@@ -116,3 +116,81 @@
 .updates-auto-label {
   font-weight: 500;
 }
+
+/* Text and number fields: a quiet box on the field color; the accent rule shows on focus. */
+.field {
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-s);
+  background: var(--field);
+  color: var(--text);
+  font-size: var(--size-14);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.field:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.field::placeholder {
+  color: var(--text-2);
+}
+
+.generator-key {
+  margin-top: var(--space-3);
+}
+
+.generator-key-form .field {
+  flex: 1;
+}
+
+.generator-saved {
+  align-items: center;
+}
+
+.generator-saved > span {
+  margin-right: var(--space-2);
+}
+
+.generator-limits {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.generator-limit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 160px;
+}
+
+.generator-limit > span:first-child {
+  font-size: var(--size-14);
+}
+
+.generator-limit .field {
+  width: 100%;
+}
+
+.generator-money {
+  position: relative;
+  display: flex;
+}
+
+.generator-currency {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-2);
+  font-size: var(--size-14);
+}
+
+.generator-money .field {
+  padding-left: var(--space-5);
+}

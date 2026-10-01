@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "notes": "Theming rules (brief §8, rules path). Every number here is editable. Archetype fitness = Σ weight × signal, signals are 0–1 features of the collection summary (see src/engine/build/theming.ts for their names). Palette lightness is OKLCH L (0–1), chroma is OKLCH C.",
+  "restraint": {
+    "wallChromaMax": 0.04,
+    "salonWallChromaMax": 0.09,
+    "floorChromaMax": 0.06,
+    "ceilingChromaMax": 0.03,
+    "accentChromaMax": 0.16,
+    "textContrastMin": 4.5
+  },
+  "archetypes": {
+    "white-cube": {
+      "label": "White cube",
+      "weights": {
+        "highKey": 1.0,
+        "lowChroma": 0.8,
+        "highContrast": 0.3,
+        "sharp": 0.3,
+        "daylight": 0.3,
+        "lowKey": -0.8,
+        "highChroma": -0.5,
+        "lowContrast": -0.3,
+        "liftedBlacks": -0.3
+      },
+      "palette": {
+        "wall": { "L": 0.97, "chroma": 0.004, "hue": "collection" },
+        "floor": { "L": 0.82, "chroma": 0.01, "hue": 80 },
+        "ceiling": { "L": 0.985, "chroma": 0.002, "hue": "wall" },
+        "accent": { "L": 0.45, "chroma": 0.1, "hue": "accent" }
+      },
+      "atmosphere": { "lightKelvin": 5000, "ambient": 0.55, "contrast": 0.35, "fog": 0.0, "daylight": 0.8 },
+      "materials": { "wall": "matte plaster", "floor": "pale oak boards", "ceiling": "white plaster" }
+    },
+    "concrete": {
+      "label": "Concrete",
+      "weights": {
+        "midKey": 0.5,
+        "lowChroma": 0.7,
+        "monochrome": 0.8,
+        "cool": 0.5,
+        "edges": 0.8,
+        "highContrast": 0.5,
+        "warm": -0.5,
+        "highChroma": -0.6,
+        "highKey": -0.3,
+        "soft": -0.3
+      },
+      "palette": {
+        "wall": { "L": 0.66, "chroma": 0.008, "hue": 250 },
+        "floor": { "L": 0.5, "chroma": 0.008, "hue": 250 },
+        "ceiling": { "L": 0.72, "chroma": 0.005, "hue": 250 },
+        "accent": { "L": 0.6, "chroma": 0.1, "hue": "accent" }
+      },
+      "atmosphere": { "lightKelvin": 4300, "ambient": 0.35, "contrast": 0.6, "fog": 0.05, "daylight": 0.45 },
+      "materials": { "wall": "board-formed concrete", "floor": "polished concrete", "ceiling": "raw concrete" }
+    },
+    "timber": {
+      "label": "Timber",
+      "weights": {
+        "warm": 1.0,
+        "midKey": 0.5,
+        "daylight": 0.5,
+        "horizon": 0.3,
+        "midChroma": 0.4,
+        "cool": -0.8,
+        "monochrome": -0.5,
+        "lowKey": -0.3,
+        "highChroma": -0.2
+      },
+      "palette": {
+        "wall": { "L": 0.92, "chroma": 0.02, "hue": 75 },
+        "floor": { "L": 0.6, "chroma": 0.06, "hue": 65 },
+        "ceiling": { "L": 0.75, "chroma": 0.03, "hue": 70 },
+        "accent": { "L": 0.5, "chroma": 0.1, "hue": "accent" }
+      },
+      "atmosphere": { "lightKelvin": 3400, "ambient": 0.5, "contrast": 0.4, "fog": 0.0, "daylight": 0.7 },
+      "materials": { "wall": "lime plaster", "floor": "wide oak planks", "ceiling": "timber slats" }
+    },
+    "nocturne": {
+      "label": "Nocturne",
+      "weights": {
+        "lowKey": 1.2,
+        "night": 0.8,
+        "shadowClipping": 0.5,
+        "highContrast": 0.3,
+        "highKey": -1.0,
+        "daylight": -0.3,
+        "liftedBlacks": -0.3
+      },
+      "palette": {
+        "wall": { "L": 0.2, "chroma": 0.015, "hue": "collection" },
+        "floor": { "L": 0.14, "chroma": 0.01, "hue": "wall" },
+        "ceiling": { "L": 0.1, "chroma": 0.005, "hue": "wall" },
+        "accent": { "L": 0.7, "chroma": 0.12, "hue": "accent" }
+      },
+      "atmosphere": { "lightKelvin": 2900, "ambient": 0.12, "contrast": 0.8, "fog": 0.1, "daylight": 0.0 },
+      "materials": { "wall": "dark velvet plaster", "floor": "black basalt", "ceiling": "matte black" }
+    },
+    "salon": {
+      "label": "Salon",
+      "weights": {
+        "highChroma": 1.0,
+        "variety": 0.8,
+        "portraits": 0.5,
+        "warm": 0.3,
+        "midKey": 0.2,
+        "lowChroma": -0.8,
+        "monochrome": -0.8,
+        "negativeSpace": -0.3
+      },
+      "palette": {
+        "wall": { "L": 0.42, "chroma": 0.08, "hue": "collection" },
+        "floor": { "L": 0.35, "chroma": 0.05, "hue": 60 },
+        "ceiling": { "L": 0.9, "chroma": 0.015, "hue": 80 },
+        "accent": { "L": 0.75, "chroma": 0.14, "hue": "accent" }
+      },
+      "atmosphere": { "lightKelvin": 3000, "ambient": 0.4, "contrast": 0.5, "fog": 0.0, "daylight": 0.3 },
+      "materials": { "wall": "painted panelling", "floor": "herringbone walnut", "ceiling": "plaster with cornice" }
+    },
+    "mist": {
+      "label": "Mist",
+      "weights": {
+        "lowContrast": 1.0,
+        "liftedBlacks": 0.8,
+        "negativeSpace": 0.8,
+        "soft": 0.6,
+        "lowChroma": 0.4,
+        "highContrast": -0.8,
+        "highChroma": -0.5,
+        "edges": -0.5
+      },
+      "palette": {
+        "wall": { "L": 0.9, "chroma": 0.01, "hue": "collection" },
+        "floor": { "L": 0.8, "chroma": 0.01, "hue": "wall" },
+        "ceiling": { "L": 0.94, "chroma": 0.005, "hue": "wall" },
+        "accent": { "L": 0.55, "chroma": 0.06, "hue": "accent" }
+      },
+      "atmosphere": { "lightKelvin": 6000, "ambient": 0.7, "contrast": 0.2, "fog": 0.35, "daylight": 0.6 },
+      "materials": { "wall": "chalk plaster", "floor": "pale limestone", "ceiling": "diffuse fabric" }
+    }
+  },
+  "text": {
+    "dark": { "L": 0.22, "chroma": 0.01 },
+    "light": { "L": 0.96, "chroma": 0.005 }
+  },
+  "signals": {
+    "chromaScale": 0.12,
+    "grainScale": 0.05,
+    "edgeScale": 0.3,
+    "sharpnessScale": 60,
+    "shadowClipScale": 0.1
+  }
+}

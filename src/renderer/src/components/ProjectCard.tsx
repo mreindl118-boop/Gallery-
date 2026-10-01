@@ -1,7 +1,7 @@
 import * as CM from '@radix-ui/react-context-menu'
 import { forwardRef, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import type { ProjectSummary } from '@shared/schemas'
-import { cardImportLine, editedLine, photoCountLine } from '../lib/format'
+import { cardBuildLine, cardImportLine, editedLine, photoCountLine } from '../lib/format'
 import { useApp } from '../state/store'
 import { Plinth } from './Plinth'
 import './project-card.css'
@@ -28,12 +28,13 @@ export const ProjectCard = forwardRef<HTMLElement, ProjectCardProps>(function Pr
 ) {
   const revealLabel = window.gallery.platform === 'darwin' ? 'Show in Finder' : 'Show in Explorer'
   const progress = useApp((s) => s.progress[project.id])
+  const build = useApp((s) => s.builds[project.id])
   const dropping = useApp((s) => s.dropProject === project.id)
   const titleClick = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(titleClick.current), [])
 
   const count = progress ? progress.photos : project.photoCount
-  const secondLine = cardImportLine(progress) ?? editedLine(project.updated, project.created)
+  const secondLine = cardImportLine(progress) ?? cardBuildLine(build) ?? editedLine(project.updated, project.created)
 
   const onClick = (e: MouseEvent<HTMLElement>) => {
     // Clicks in the context menu bubble here through its portal; only clicks on the card itself open it.

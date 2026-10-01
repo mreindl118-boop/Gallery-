@@ -1,3 +1,4 @@
+import type { BuildProgress, BuildStage, GenerationEstimate, GeneratorProvider } from '@shared/build'
 import type { ImportProgress } from '@shared/ingest'
 
 /** Plain-language facts for cards and panels. Sentence case, no dot-separated strings. */
@@ -150,4 +151,51 @@ export function shortenFolder(folder: string, max = 44): string {
     tail = next
   }
   return `${head}${sep}…${sep}${tail}`
+}
+
+/* Build */
+
+export const PROVIDER_NAMES: Record<GeneratorProvider, string> = {
+  none: 'None',
+  stability: 'Stability AI',
+  openai: 'OpenAI',
+  xai: 'xAI'
+}
+
+export const BUILD_STAGES: Array<{ value: BuildStage; label: string }> = [
+  { value: 'reading', label: 'Reading' },
+  { value: 'theming', label: 'Theming' },
+  { value: 'generating', label: 'Making assets' }
+]
+
+export const isBuilding = (b: BuildProgress | null | undefined): boolean =>
+  b?.state === 'waiting' || b?.state === 'running'
+
+/** Share of the build that is finished, 0–99 while work remains. */
+export function buildPercent(b: BuildProgress): number {
+  return Math.max(0, Math.min(99, Math.floor(b.fraction * 100)))
+}
+
+/** The Library card's second line while a project builds, or null when it isn't. */
+export function cardBuildLine(b: BuildProgress | null | undefined): string | null {
+  if (!b) return null
+  if (isBuilding(b)) return `Building ${buildPercent(b)}%`
+  if (b.state === 'paused') return `Build paused at ${buildPercent(b)}%`
+  return null
+}
+
+/** "$0.48", "$5", "$12.50": money without noise. */
+export function usd(n: number): string {
+  const whole = Number.isInteger(n) || Math.abs(n - Math.round(n)) < 0.005
+  return `$${whole ? Math.round(n).toLocaleString() : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/** What the next generating run will cost, before it starts. */
+export function estimateLine(e: GenerationEstimate, capUsd: number): string {
+  if (e.provider === 'none' || e.images <= 0) return 'No images will be made.'
+  const name = PROVIDER_NAMES[e.provider]
+  const head = `Will make ${plural(e.images, 'image', 'images')} with ${name}, about ${usd(e.totalUsd)}.`
+  return e.withinCap
+    ? `${head} Your cap is ${usd(capUsd)}.`
+    : `${head} That is over your cap of ${usd(capUsd)}, so nothing will be made until you raise it or lower the images per build.`
 }

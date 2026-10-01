@@ -3,6 +3,7 @@ import { memo, useMemo, useRef } from 'react'
 import type { ImportIssue, ImportProgress } from '@shared/ingest'
 import { controlImport, pickAndImport, retryIssues } from '../lib/bridge'
 import { importDetails, importHeadline, isImporting, plural, shortenFolder, splitPath } from '../lib/format'
+import { BuildPanel } from './BuildPanel'
 import { Button } from './Button'
 import './import-panel.css'
 
@@ -61,6 +62,8 @@ export function ImportPanel({
           )}
         </div>
       </section>
+
+      <BuildPanel projectId={projectId} />
 
       {shown.length > 0 && (
         <section className="import-issues" aria-labelledby="import-issues-title">

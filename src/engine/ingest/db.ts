@@ -172,6 +172,42 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE photos ADD COLUMN duration_ms INTEGER;
       ALTER TABLE photos ADD COLUMN fps REAL;
       ALTER TABLE photos ADD COLUMN codec TEXT;
+    `),
+  // The build: one reading per photo, one build row per project, and the generated assets.
+  (db) =>
+    db.exec(`
+      CREATE TABLE readings (
+        photo_id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        json TEXT NOT NULL,
+        read_at TEXT NOT NULL
+      );
+      CREATE TABLE build (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        state TEXT NOT NULL CHECK (state IN ('idle','waiting','running','paused','done','failed')),
+        stage TEXT CHECK (stage IN ('reading','theming','generating')),
+        completed TEXT NOT NULL DEFAULT '[]',
+        planned TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT '',
+        message TEXT,
+        counts TEXT NOT NULL DEFAULT '{}',
+        summary TEXT,
+        theme TEXT,
+        theme_hash TEXT,
+        started_at TEXT,
+        finished_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE generated_assets (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('texture','backdrop','companion')),
+        path TEXT NOT NULL,
+        seed_photo_ids TEXT NOT NULL DEFAULT '[]',
+        prompt TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        theme_hash TEXT,
+        created_at TEXT NOT NULL
+      );
     `)
 ]
 
@@ -185,8 +221,12 @@ const now = () => new Date().toISOString()
 export class IngestDb {
   private constructor(private readonly db: DatabaseSync) {}
 
-  /** Opens (or with `create`, creates) the index. Returns null when it doesn't exist and create is false. */
-  static open(root: string, { create }: { create: boolean }): IngestDb | null {
+  /**
+   * Opens (or with `create`, creates) the index. Returns null when it doesn't exist and create is false.
+   * The import queue recovers interrupted jobs on open; other users of the index (the build) pass
+   * `recover: false` so they never touch jobs the queue is working on.
+   */
+  static open(root: string, { create, recover = true }: { create: boolean; recover?: boolean }): IngestDb | null {
     const file = join(root, DB_FILE)
     if (!existsSync(file)) {
       if (!create) return null
@@ -201,7 +241,7 @@ export class IngestDb {
       throw err
     }
     const store = new IngestDb(db)
-    store.recoverInterrupted()
+    if (recover) store.recoverInterrupted()
     return store
   }
 
@@ -535,6 +575,162 @@ export class IngestDb {
       this.db.prepare(`UPDATE jobs SET ${reset} WHERE state = 'failed' AND retryable = 1`).run(batch, t).changes
     )
   }
+  // ----- build: readings, state, generated assets ---------------------------
+
+  /** Every photo row in sequence order (the build reads the lot). */
+  allPhotos(): PhotoRecord[] {
+    return this.db.prepare('SELECT * FROM photos ORDER BY seq').all() as unknown as PhotoRecord[]
+  }
+
+  /** Photos with a thumbnail that have no reading at `version` yet. */
+  unreadPhotos(version: number): PhotoRecord[] {
+    return this.db
+      .prepare(
+        `SELECT p.* FROM photos p LEFT JOIN readings r ON r.photo_id = p.id AND r.version = ?
+         WHERE p.has_thumb = 1 AND r.photo_id IS NULL ORDER BY p.seq`
+      )
+      .all(version) as unknown as PhotoRecord[]
+  }
+
+  putReading(photoId: string, version: number, reading: unknown): void {
+    this.db
+      .prepare(
+        `INSERT INTO readings (photo_id, version, json, read_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (photo_id) DO UPDATE SET version = excluded.version, json = excluded.json, read_at = excluded.read_at`
+      )
+      .run(photoId, version, JSON.stringify(reading), now())
+  }
+
+  reading(photoId: string): unknown | null {
+    const row = this.db.prepare('SELECT json FROM readings WHERE photo_id = ?').get(photoId) as
+      { json: string } | undefined
+    return row ? (JSON.parse(row.json) as unknown) : null
+  }
+
+  /** Readings at `version` for photos still in the project. */
+  readings(version: number): { photoId: string; reading: unknown }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT r.photo_id, r.json FROM readings r JOIN photos p ON p.id = r.photo_id WHERE r.version = ? ORDER BY p.seq`
+      )
+      .all(version) as { photo_id: string; json: string }[]
+    return rows.map((r) => ({ photoId: r.photo_id, reading: JSON.parse(r.json) as unknown }))
+  }
+
+  readingCount(version: number): number {
+    return (
+      this.db
+        .prepare('SELECT COUNT(*) AS n FROM readings r JOIN photos p ON p.id = r.photo_id WHERE r.version = ?')
+        .get(version) as { n: number }
+    ).n
+  }
+
+  buildRow(): BuildRow | null {
+    return (this.db.prepare('SELECT * FROM build WHERE id = 1').get() as unknown as BuildRow | undefined) ?? null
+  }
+
+  /** Writes the single build row (merging over what is there). */
+  putBuild(fields: Partial<Omit<BuildRow, 'id' | 'updated_at'>>): BuildRow {
+    const current = this.buildRow() ?? EMPTY_BUILD
+    const next: BuildRow = { ...current, ...fields, id: 1, updated_at: now() }
+    this.db
+      .prepare(
+        `INSERT INTO build (id, state, stage, completed, planned, status, message, counts, summary, theme, theme_hash,
+           started_at, finished_at, updated_at)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET state = excluded.state, stage = excluded.stage, completed = excluded.completed,
+           planned = excluded.planned, status = excluded.status, message = excluded.message, counts = excluded.counts,
+           summary = excluded.summary, theme = excluded.theme, theme_hash = excluded.theme_hash,
+           started_at = excluded.started_at, finished_at = excluded.finished_at, updated_at = excluded.updated_at`
+      )
+      .run(
+        next.state,
+        next.stage,
+        next.completed,
+        next.planned,
+        next.status,
+        next.message,
+        next.counts,
+        next.summary,
+        next.theme,
+        next.theme_hash,
+        next.started_at,
+        next.finished_at,
+        next.updated_at
+      )
+    return next
+  }
+
+  insertAsset(a: AssetRow): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO generated_assets (id, kind, path, seed_photo_ids, prompt, provider, theme_hash, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(a.id, a.kind, a.path, a.seed_photo_ids, a.prompt, a.provider, a.theme_hash, a.created_at)
+  }
+
+  assets(): AssetRow[] {
+    return this.db.prepare('SELECT * FROM generated_assets ORDER BY created_at, id').all() as unknown as AssetRow[]
+  }
+
+  deleteAssets(ids: string[]): void {
+    const stmt = this.db.prepare('DELETE FROM generated_assets WHERE id = ?')
+    this.tx(() => {
+      for (const id of ids) stmt.run(id)
+    })
+  }
+}
+
+export interface BuildRow {
+  id: number
+  state: string
+  stage: string | null
+  /** JSON array of completed stages. */
+  completed: string
+  /** JSON array of the stages this build planned. */
+  planned: string
+  status: string
+  message: string | null
+  /** JSON: { photos, read, images, made } */
+  counts: string
+  /** JSON collection summary from the last reading. */
+  summary: string | null
+  /** JSON copy of exhibition/theme.json. */
+  theme: string | null
+  theme_hash: string | null
+  started_at: string | null
+  finished_at: string | null
+  updated_at: string
+}
+
+const EMPTY_BUILD: BuildRow = {
+  id: 1,
+  state: 'idle',
+  stage: null,
+  completed: '[]',
+  planned: '[]',
+  status: '',
+  message: null,
+  counts: '{}',
+  summary: null,
+  theme: null,
+  theme_hash: null,
+  started_at: null,
+  finished_at: null,
+  updated_at: ''
+}
+
+export interface AssetRow {
+  id: string
+  kind: 'texture' | 'backdrop' | 'companion'
+  path: string
+  /** JSON array of photo ids. */
+  seed_photo_ids: string
+  prompt: string
+  provider: string
+  theme_hash: string | null
+  created_at: string
 }
 
 function migrateDb(db: DatabaseSync): void {

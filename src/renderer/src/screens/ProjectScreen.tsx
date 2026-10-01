@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
+import type { GeneratedAsset } from '@shared/build'
 import type { ImportIssue } from '@shared/ingest'
 import type { ProjectSummary } from '@shared/schemas'
 import { Button } from '../components/Button'
 import { ContactSheet } from '../components/ContactSheet'
 import { DropOverlay } from '../components/DropTarget'
+import { GeneratedStrip } from '../components/GeneratedStrip'
 import { ImportPanel } from '../components/ImportPanel'
 import { TitleBar } from '../components/TitleBar'
 import { closeProject, pickAndImport } from '../lib/bridge'
@@ -12,6 +14,7 @@ import { useApp } from '../state/store'
 import './project.css'
 
 const NO_ISSUES: ImportIssue[] = []
+const NO_ASSETS: GeneratedAsset[] = []
 
 /** A project's screen: a calm drop invitation while it is empty, then the contact sheet and the import panel. */
 export function ProjectScreen({ project }: { project: ProjectSummary }) {
@@ -20,6 +23,7 @@ export function ProjectScreen({ project }: { project: ProjectSummary }) {
   const list = useApp((s) => s.photos[id])
   const progress = useApp((s) => s.progress[id])
   const issues = useApp((s) => s.issues[id] ?? NO_ISSUES)
+  const assets = useApp((s) => s.assets[id] ?? NO_ASSETS)
 
   // Escape goes back to the Library, unless a dialog or menu is open or someone is typing.
   useEffect(() => {
@@ -71,7 +75,10 @@ export function ProjectScreen({ project }: { project: ProjectSummary }) {
       ) : (
         <main className="project-import">
           <div className="project-sheet">
-            <ContactSheet projectId={id} photos={photos} />
+            <div className="project-sheet-grid">
+              <ContactSheet projectId={id} photos={photos} />
+            </div>
+            <GeneratedStrip projectId={id} assets={assets} />
           </div>
           <ImportPanel projectId={id} progress={progress} issues={issues} />
         </main>

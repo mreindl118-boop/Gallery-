@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { BuildProgress, GeneratedAsset, GeneratorSettings } from '@shared/build'
 import type { ImportIssue, ImportProgress, ImportStatus, PhotoSummary } from '@shared/ingest'
 import type { EngineEvent } from '@shared/rpc'
 import type {
@@ -54,6 +55,12 @@ interface AppState {
   photos: Record<string, PhotoList>
   /** Files that couldn't be imported, per project id. */
   issues: Record<string, ImportIssue[]>
+  /** Build progress per project id. Missing: not read yet. null: couldn't be read. */
+  builds: Record<string, BuildProgress | null>
+  /** Generated assets of open projects, in creation order. */
+  assets: Record<string, GeneratedAsset[]>
+  /** Generator provider, key presence and limits. Null until read. */
+  generator: GeneratorSettings | null
   /** A drag carrying files is over the window. */
   dragging: boolean
   /** On the Library: the project card under that drag. */
@@ -63,6 +70,9 @@ interface AppState {
   dismiss: (id: number) => void
   setProgress: (progress: ImportProgress) => void
   setStatus: (id: string, status: ImportStatus) => void
+  setBuild: (progress: BuildProgress) => void
+  /** Replace an open project's generated assets (a full read), merged by id with any that arrived as events. */
+  setAssets: (id: string, assets: GeneratedAsset[]) => void
   /** Merge photos into an open project's list; `loaded` marks the first full read as finished. */
   mergePhotos: (id: string, photos: PhotoSummary[], loaded?: boolean) => void
   /** Apply one ~10 Hz batch of engine events in a single store update. */
@@ -91,6 +101,9 @@ export const useApp = create<AppState>((set) => ({
   progress: {},
   photos: {},
   issues: {},
+  builds: {},
+  assets: {},
+  generator: null,
   dragging: false,
   dropProject: null,
   set: (patch) => set(patch),
@@ -106,6 +119,8 @@ export const useApp = create<AppState>((set) => ({
       progress: { ...s.progress, [id]: status.progress },
       issues: { ...s.issues, [id]: status.issues }
     })),
+  setBuild: (progress) => set((s) => ({ builds: { ...s.builds, [progress.projectId]: progress } })),
+  setAssets: (id, assets) => set((s) => ({ assets: { ...s.assets, [id]: mergeAssets(s.assets[id] ?? [], assets) } })),
   mergePhotos: (id, photos, loaded) =>
     set((s) => {
       const list = s.photos[id]
@@ -120,12 +135,21 @@ export const useApp = create<AppState>((set) => ({
 /** Engine events → one partial state (or the same state when nothing we keep changed). */
 function reduceEngineEvents(s: AppState, batch: EngineEvent[]): AppState | Partial<AppState> {
   let progress = s.progress
+  let builds = s.builds
   const photos = new Map<string, PhotoSummary[]>()
   const issues = new Map<string, ImportIssue[]>()
+  const assets = new Map<string, GeneratedAsset[]>()
   for (const e of batch) {
     if (e.type === 'import.progress') {
       if (progress === s.progress) progress = { ...s.progress }
       progress[e.progress.projectId] = e.progress
+    } else if (e.type === 'build.progress') {
+      if (builds === s.builds) builds = { ...s.builds }
+      builds[e.progress.projectId] = e.progress
+    } else if (e.type === 'build.asset') {
+      const into = assets.get(e.asset.projectId)
+      if (into) into.push(e.asset)
+      else assets.set(e.asset.projectId, [e.asset])
     } else if (e.type === 'import.photos') {
       if (!s.photos[e.projectId]) continue
       const into = photos.get(e.projectId)
@@ -139,6 +163,12 @@ function reduceEngineEvents(s: AppState, batch: EngineEvent[]): AppState | Parti
   }
   const patch: Partial<AppState> = {}
   if (progress !== s.progress) patch.progress = progress
+  if (builds !== s.builds) patch.builds = builds
+  if (assets.size) {
+    const next = { ...s.assets }
+    for (const [id, incoming] of assets) next[id] = mergeAssets(next[id] ?? [], incoming)
+    patch.assets = next
+  }
   if (photos.size) {
     const next = { ...s.photos }
     for (const [id, incoming] of photos) next[id] = mergePhotoList(next[id]!, incoming)
@@ -240,6 +270,14 @@ export function mergeIssues(list: ImportIssue[], incoming: ImportIssue[]): Impor
   const byId = new Map(list.map((i) => [i.id, i]))
   for (const i of incoming) byId.set(i.id, i)
   return [...byId.values()]
+}
+
+/** Merge generated assets by id, keeping creation order; a newer report of an asset wins. */
+export function mergeAssets(list: GeneratedAsset[], incoming: GeneratedAsset[]): GeneratedAsset[] {
+  if (!incoming.length) return list
+  const byId = new Map(list.map((a) => [a.id, a]))
+  for (const a of incoming) byId.set(a.id, a)
+  return [...byId.values()].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))
 }
 
 /** Surface an RPC failure in plain words. */

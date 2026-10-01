@@ -23,6 +23,7 @@ import { EMPTY_REASON, HEAD_BYTES, identify, RAW_REASON, unsupportedReason } fro
 import { EMPTY_META, readMetadata, type PhotoMeta } from './metadata'
 import { joinPosix, targetCandidates } from './paths'
 import type { WeightedPool } from './pool'
+import { notifyImportDone, registerDecodePool } from '../build/hooks'
 import { extractPoster, probeVideo, videoMegapixels, type VideoInfo } from './video'
 import { walk } from './walk'
 
@@ -96,7 +97,9 @@ export class ProjectQueue {
     readonly projectId: string,
     public root: string,
     private readonly ctx: QueueContext
-  ) {}
+  ) {
+    registerDecodePool(ctx.pool)
+  }
 
   get busy(): boolean {
     return this.running.size > 0 || this.discovering > 0
@@ -320,8 +323,11 @@ export class ProjectQueue {
 
   private afterWork(): void {
     if (this.busy || this.disposed) return
-    this.emitProgress(true)
+    const progress = this.emitProgress(true)
     this.settle()
+    // The import settled: the build picks it up from here (reading, theming, generating).
+    if (progress.state === 'done' && progress.imported > 0)
+      notifyImportDone({ projectId: this.projectId, root: this.root, progress })
   }
 
   private async stage(stage: JobStage | 'display', job: JobRow): Promise<void> {

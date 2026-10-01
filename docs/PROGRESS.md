@@ -3,9 +3,9 @@
 Milestones from the brief (§16). A milestone is done only when every acceptance box is ticked, tests are
 green, and its QA shots have been reviewed.
 
-**Next up:** M1 Ingest at scale — add better-sqlite3 (WAL) job queue in the engine, then discovery → identify →
-hash → store → metadata → derivatives, the Import view, and `npm run fixtures`. Start by confirming the
-Windows CI run for the M0 installer/portable boxes below.
+**Next up:** verify the three generator providers against their real APIs (the container's network blocks
+them; the owner must allow the hosts), then M1 leftovers (reference mode, RAW previews, taskbar progress,
+fixtures) and the rest of M2 (sessions/places, CLIP, photo info panel) and M3 (ExhibitionSpec, layout solver).
 
 ## M0 Foundation
 
@@ -48,6 +48,7 @@ QA log (M0):
 - [ ] Windows CI update-in-place test green (installer auto-update into custom folder, manual upgrade, portable)
 - [ ] Owner setup: make `mreindl118-boop/Gallery-` public (the release workflow checks)
 - [x] 0.1.1, 0.1.2 published; 0.2.0 (photo import) released from CI-green commit 4aacdf8
+- [x] 0.3.0 (video import) and 0.4.0 (automatic build: reading, theming, generated assets) released
 
 ## M1 Ingest at scale
 
@@ -81,28 +82,38 @@ Shipped in 0.2.0: open a project, drop photos or folders, import starts at once.
 
 ## M2 Reading
 
-- [ ] Palette (k-means++ in OKLab, 6 weighted swatches), tone, warmth, texture, structure, shape, context
+- [x] Palette (k-means++ in OKLab, 6 weighted swatches), tone, warmth, texture, structure, shape, context (`src/engine/build/reading.ts`, stored in SQLite `readings`)
 - [ ] Sessions (3 h gap) and places (~1 km GPS clusters)
 - [ ] Optional local CLIP: resumable download to app data, removable; ONNX Runtime CPU/DirectML; zero-shot tags from `design/vocabulary.json`
-- [ ] Collection-level features and variety score
+- [x] Collection-level features and variety score (`summary.ts`)
 - [ ] Photo info panel shows every metric
 - [ ] **Accept:** each fixture set lands in its expected feature ranges (tests)
 - [ ] **Accept:** the photo info panel shows every metric
 - [ ] **Accept:** CLIP runs offline after its download
-- [ ] **Accept:** a 10,000-photo project analyzes in the background without blocking import or UI
+- [ ] **Accept:** a 10,000-photo project analyzes in the background without blocking import or UI (reading runs in the engine after import, sharing the decode pool at lower priority; not yet measured at 10,000)
 
 ## M3 Design engine (rules path)
 
 - [ ] `ExhibitionSpec` and `Overrides` zod schemas in `src/shared/spec.ts`
-- [ ] Six archetype plugins with fitness functions; seeded tie-break; lock support
-- [ ] Translation rules as data (`design/rules.json`) + pure functions, every output with a reason
-- [ ] Restraint limits enforced (§8.3)
+- [x] Six archetypes with data-driven fitness (`design/rules.json`), seeded tie-break; every choice carries a reason (`theming.ts` → `exhibition/theme.json`)
+- [ ] Lock support
+- [x] Translation rules as data (`design/rules.json`) + pure functions, every output with a reason
+- [x] Restraint limits enforced (§8.3) in theming
 - [ ] Grouping, sequencing (NN + 2-opt), selection (MMR above 400), procession roles
 - [ ] Layout solver in `src/shared/layout/` (25 cm grid, openings, segments, hang, light rig, stations)
 - [ ] SVG plan-view render for debugging
 - [ ] **Accept:** property tests pass over at least 5,000 seeds
 - [ ] **Accept:** each archetype's fixture set selects that archetype
 - [ ] **Accept:** spec + layout for 300 works generates in under 1 s
+
+## Automatic build and generated assets (owner addition, 0.4.0)
+
+- [x] Build stages reading → theming → generating start by themselves after an import settles; pause/resume/cancel; progress bar and stage list on the project screen; "Building n%" on the Library card
+- [x] Build state and generated assets in the project index (SQLite migration 3); an interrupted build resumes at the next launch
+- [x] Generators: Stability AI, OpenAI Images, xAI (Grok) behind one adapter interface (`design/providers.json` holds endpoints); prompts seeded from the collection's readings and theme
+- [x] Settings → Generator: provider, key (safeStorage, never in project files/logs/events), images per build, spend cap, cost estimate, Test key
+- [x] Generated strip on the project screen; content-filtered or failed images skipped with a reason
+- [ ] **Accept:** each provider verified against its live API (blocked: container egress denies the hosts)
 
 ## M4 Rendering and navigation
 

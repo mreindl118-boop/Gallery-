@@ -2,6 +2,7 @@ import type { ThemePreference } from '@shared/schemas'
 import { useApp, reportError } from '../state/store'
 import { Button } from './Button'
 import { Dialog, DialogActions, DialogClose } from './Dialog'
+import { GeneratorSection } from './GeneratorSection'
 import { UpdatesSection } from './UpdatesSection'
 import './settings.css'
 
@@ -104,6 +105,13 @@ export function SettingsDialog() {
           </Button>
           <Button onClick={changeLibrary}>Change location</Button>
         </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="set-generator">
+        <h3 id="set-generator" className="settings-heading">
+          Generator
+        </h3>
+        <GeneratorSection />
       </section>
 
       <section className="settings-section" aria-labelledby="set-updates">
