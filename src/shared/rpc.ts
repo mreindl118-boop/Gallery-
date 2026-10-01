@@ -1,4 +1,12 @@
 import { z } from 'zod'
+import {
+  BuildProgress,
+  GeneratedAsset,
+  GenerationEstimate,
+  GeneratorProvider,
+  GeneratorSettings,
+  PhotoReading
+} from './build'
 import { ImportIssue, ImportProgress, ImportStatus, PhotoSummary } from './ingest'
 import {
   AppSettings,
@@ -66,6 +74,32 @@ export const rpcContract = {
     }),
     z.array(PhotoSummary)
   ),
+  /** The automatic build (read → theme → generate) for a project. */
+  'build.status': m(z.object({ id: ProjectId }), BuildProgress),
+  'build.start': m(z.object({ id: ProjectId }), BuildProgress),
+  'build.pause': m(z.object({ id: ProjectId }), BuildProgress),
+  'build.resume': m(z.object({ id: ProjectId }), BuildProgress),
+  'build.cancel': m(z.object({ id: ProjectId }), BuildProgress),
+  'build.reading': m(z.object({ id: ProjectId, photoId: z.string() }), PhotoReading.nullable()),
+  'build.assets': m(z.object({ id: ProjectId }), z.array(GeneratedAsset)),
+  /** Generator provider and key (stored with safeStorage in userData, never in a project). */
+  'generator.settings': m(none, GeneratorSettings),
+  'generator.setProvider': m(z.object({ provider: GeneratorProvider }), GeneratorSettings),
+  'generator.setKey': m(
+    z.object({ provider: z.enum(['stability', 'openai', 'xai']), key: z.string().min(1).max(500) }),
+    GeneratorSettings
+  ),
+  'generator.clearKey': m(z.object({ provider: z.enum(['stability', 'openai', 'xai']) }), GeneratorSettings),
+  'generator.setLimits': m(
+    z.object({ imagesPerBuild: z.number().int().min(0).max(200), spendCapUsd: z.number().min(0).max(1000) }),
+    GeneratorSettings
+  ),
+  'generator.estimate': m(z.object({ id: ProjectId }), GenerationEstimate),
+  /** Prove the stored key works: one cheap request. Returns a plain message. */
+  'generator.test': m(
+    z.object({ provider: z.enum(['stability', 'openai', 'xai']) }),
+    z.object({ ok: z.boolean(), message: z.string() })
+  ),
   /** Native file/folder pickers for Add photos / Add folder. Resolve to absolute paths (empty when cancelled). */
   'import.pickFiles': m(none, z.array(z.string())),
   'import.pickFolder': m(none, z.array(z.string())),
@@ -116,7 +150,10 @@ export const EngineEvent = z.discriminatedUnion('type', [
   /** Photos that finished importing (or got a new derivative). */
   z.object({ type: z.literal('import.photos'), projectId: ProjectId, photos: z.array(PhotoSummary) }),
   /** A file that could not be imported. */
-  z.object({ type: z.literal('import.issue'), projectId: ProjectId, issue: ImportIssue })
+  z.object({ type: z.literal('import.issue'), projectId: ProjectId, issue: ImportIssue }),
+  /** The automatic build's progress (throttled). */
+  z.object({ type: z.literal('build.progress'), progress: BuildProgress }),
+  z.object({ type: z.literal('build.asset'), asset: GeneratedAsset })
 ])
 export type EngineEvent = z.infer<typeof EngineEvent>
 export const EngineEventBatch = z.array(EngineEvent)

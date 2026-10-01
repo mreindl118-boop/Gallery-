@@ -5,6 +5,7 @@ import { EVENT_CHANNEL, GalleryError, type MainEvent } from '@shared/rpc'
 import type { LibraryProblem, LibraryStatus } from '@shared/schemas'
 import { EngineHost } from './engine-host'
 import type { Library } from './library'
+import { GeneratorStore } from './generator-store'
 import { LibraryHost } from './library-host'
 import { handleGalleryScheme, registerGalleryScheme } from './protocol'
 import { registerRpc } from './rpc'
@@ -32,6 +33,7 @@ if (!app.requestSingleInstanceLock()) {
 
 async function main(): Promise<void> {
   const settings = new SettingsStore()
+  const generator = new GeneratorStore()
   let win: BrowserWindow | null = null
 
   const emit = (event: MainEvent): void => {
@@ -66,6 +68,25 @@ async function main(): Promise<void> {
 
   const ingest = async <T>(method: string, id: string, extra: Record<string, unknown> = {}): Promise<T> =>
     engine.request<T>(`ingest.${method}`, { projectId: id, root: await projectRootFor(id), ...extra }, 120_000)
+
+  /** Build requests carry the provider key only inside the engine request, never to the renderer. */
+  const build = async <T>(method: string, id: string, extra: Record<string, unknown> = {}): Promise<T> => {
+    const g = generator.settings()
+    const credentials =
+      g.provider === 'none'
+        ? null
+        : {
+            provider: g.provider,
+            key: generator.key(g.provider),
+            prices: await generator.prices(),
+            limits: { imagesPerBuild: g.imagesPerBuild, spendCapUsd: g.spendCapUsd }
+          }
+    return engine.request<T>(
+      `build.${method}`,
+      { projectId: id, root: await projectRootFor(id), credentials, ...extra },
+      120_000
+    )
+  }
 
   const IMAGE_EXTENSIONS = [
     'jpg',
@@ -129,6 +150,7 @@ async function main(): Promise<void> {
   }
 
   await settings.load()
+  await generator.load()
   startupLog(`settings loaded from ${app.getPath('userData')}`)
   nativeTheme.themeSource = settings.get().theme
   const updates = new UpdateController(settings.get().autoUpdate, (status) => emit({ type: 'updates.status', status }))
@@ -210,6 +232,24 @@ async function main(): Promise<void> {
       'import.retry': ({ id, issueIds }) => ingest('retry', id, issueIds ? { issueIds } : {}),
       'import.status': ({ id }) => ingest('status', id),
       'photos.list': ({ id, offset, limit }) => ingest('photos', id, { offset, limit }),
+      'build.status': ({ id }) => build('status', id),
+      'build.start': ({ id }) => build('start', id),
+      'build.pause': ({ id }) => build('pause', id),
+      'build.resume': ({ id }) => build('resume', id),
+      'build.cancel': ({ id }) => build('cancel', id),
+      'build.reading': ({ id, photoId }) => build('reading', id, { photoId }),
+      'build.assets': ({ id }) => build('assets', id),
+      'generator.settings': () => generator.settings(),
+      'generator.setProvider': ({ provider }) => generator.setProvider(provider),
+      'generator.setKey': ({ provider, key }) => generator.setKey(provider, key),
+      'generator.clearKey': ({ provider }) => generator.clearKey(provider),
+      'generator.setLimits': ({ imagesPerBuild, spendCapUsd }) => generator.setLimits(imagesPerBuild, spendCapUsd),
+      'generator.estimate': ({ id }) => build('estimate', id),
+      'generator.test': async ({ provider }) => {
+        const key = generator.key(provider)
+        if (!key) return { ok: false, message: 'No key is saved for this provider yet.' }
+        return engine.request('build.testProvider', { provider, key, prices: await generator.prices() }, 60_000)
+      },
       'import.pickFiles': async () => {
         const opts: Electron.OpenDialogOptions = {
           title: 'Add photos and videos',
