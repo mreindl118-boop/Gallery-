@@ -27,6 +27,16 @@ afterEach(async () => {
 
 type Ev = EngineEvent & { at: number }
 
+/** Count stored readings, closing the index again (Windows can't delete an open database). */
+function readingCount(root: string): number {
+  const db = IngestDb.open(root, { create: false, recover: false })!
+  try {
+    return db.readingCount(1)
+  } finally {
+    db.close()
+  }
+}
+
 async function until<T>(fn: () => T | undefined | false, timeout = 15_000): Promise<T> {
   const start = Date.now()
   for (;;) {
@@ -164,7 +174,7 @@ describe('build orchestrator', () => {
     pb.start()
     await until(() => pb.status().state === 'done')
     expect(read).toHaveLength(1)
-    expect(IngestDb.open(root, { create: false, recover: false })!.readingCount(1)).toBe(4)
+    expect(readingCount(root)).toBe(4)
   })
 
   it('resumes after a simulated restart with the photos still unread', async () => {
@@ -210,7 +220,7 @@ describe('build orchestrator', () => {
     const last = await until(() => settled(events2))
     expect(last.state).toBe('done')
     expect(readB).toHaveLength(3)
-    expect(IngestDb.open(root, { create: false, recover: false })!.readingCount(1)).toBe(6)
+    expect(readingCount(root)).toBe(6)
   })
 
   it('pauses, resumes and cancels', async () => {
