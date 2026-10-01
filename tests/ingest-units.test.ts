@@ -52,7 +52,7 @@ describe('identify', () => {
     expect(identify(new Uint8Array(0), 'a.jpg')).toEqual({ kind: 'empty' })
     expect(identify(Buffer.from('hello, this is text'), 'notes.jpg')).toEqual({ kind: 'unsupported', what: null })
     expect(identify(heads.gif(), 'a.gif')).toEqual({ kind: 'unsupported', what: 'GIF' })
-    expect(identify(heads.mp4(), 'a.mp4')).toEqual({ kind: 'unsupported', what: 'video' })
+    expect(identify(heads.mp4(), 'a.mp4')).toEqual({ kind: 'video', format: 'mp4' })
     expect(identify(Buffer.from([0xff, 0xd8]), 'a.jpg')).toEqual({ kind: 'unsupported', what: null })
     expect(unsupportedReason(null)).toMatch(/^galleryLAB can't open this kind of file\. /)
     expect(unsupportedReason('GIF')).toMatch(/^GIF files can't be imported\./)

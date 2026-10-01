@@ -1,7 +1,15 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
-import { derivativePath, type ImportIssue, type PhotoFormat, type PhotoSummary } from '@shared/ingest'
+import {
+  derivativePath,
+  isVideoFormat,
+  VideoFormat,
+  type ImportIssue,
+  type MediaFormat,
+  type MediaKind,
+  type PhotoSummary
+} from '@shared/ingest'
 
 /**
  * The project's ingest index: <root>/.gallery/index.sqlite (WAL). It holds
@@ -26,7 +34,7 @@ export interface JobRow {
   stage: JobStage
   attempts: number
   hash: string | null
-  format: PhotoFormat | null
+  format: MediaFormat | null
   bytes: number | null
   width: number | null
   height: number | null
@@ -42,11 +50,16 @@ export interface PhotoRecord {
   job_id: number | null
   original_path: string
   name: string
-  format: PhotoFormat
+  kind: MediaKind
+  format: MediaFormat
   width: number
   height: number
   bytes: number
   taken_at: string | null
+  /** Videos only. */
+  duration_ms: number | null
+  fps: number | null
+  codec: string | null
   camera: string | null
   lens: string | null
   focal_length: number | null
@@ -73,6 +86,8 @@ export interface BatchCounts {
   total: number
   done: number
   imported: number
+  /** Of `imported`, the videos. */
+  importedVideos: number
   duplicates: number
   failed: number
   remaining: number
@@ -149,8 +164,19 @@ export const MIGRATIONS: Migration[] = [
       );
       CREATE INDEX photos_path ON photos (lower(original_path));
       CREATE INDEX jobs_target ON jobs (lower(target));
+    `),
+  // Videos sit in the photos table with their own kind; rows from before are photos.
+  (db) =>
+    db.exec(`
+      ALTER TABLE photos ADD COLUMN kind TEXT NOT NULL DEFAULT 'photo' CHECK (kind IN ('photo','video'));
+      ALTER TABLE photos ADD COLUMN duration_ms INTEGER;
+      ALTER TABLE photos ADD COLUMN fps REAL;
+      ALTER TABLE photos ADD COLUMN codec TEXT;
     `)
 ]
+
+/** SQL list of the video formats, for counting by job format. */
+const VIDEO_FORMATS_SQL = VideoFormat.options.map((f) => `'${f}'`).join(',')
 
 export const SCHEMA_VERSION = MIGRATIONS.length
 
@@ -347,13 +373,16 @@ export class IngestDb {
       const createdAt = existing?.created_at ?? now()
       this.db
         .prepare(
-          `INSERT INTO photos (id, job_id, original_path, name, format, width, height, bytes, taken_at, camera, lens,
+          `INSERT INTO photos (id, job_id, original_path, name, kind, format, width, height, bytes, taken_at,
+             duration_ms, fps, codec, camera, lens,
              focal_length, aperture, shutter, iso, gps_lat, gps_lon, rating, title, caption, keywords, orientation, lqip,
              has_thumb, has_display, seq, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id) DO UPDATE SET job_id = excluded.job_id, original_path = excluded.original_path,
-             name = excluded.name, format = excluded.format, width = excluded.width, height = excluded.height,
-             bytes = excluded.bytes, taken_at = excluded.taken_at, camera = excluded.camera, lens = excluded.lens,
+             name = excluded.name, kind = excluded.kind, format = excluded.format, width = excluded.width,
+             height = excluded.height, bytes = excluded.bytes, taken_at = excluded.taken_at,
+             duration_ms = excluded.duration_ms, fps = excluded.fps, codec = excluded.codec,
+             camera = excluded.camera, lens = excluded.lens,
              focal_length = excluded.focal_length, aperture = excluded.aperture, shutter = excluded.shutter,
              iso = excluded.iso, gps_lat = excluded.gps_lat, gps_lon = excluded.gps_lon, rating = excluded.rating,
              title = excluded.title, caption = excluded.caption, keywords = excluded.keywords,
@@ -364,11 +393,15 @@ export class IngestDb {
           p.job_id,
           p.original_path,
           p.name,
+          p.kind,
           p.format,
           p.width,
           p.height,
           p.bytes,
           p.taken_at,
+          p.duration_ms,
+          p.fps,
+          p.codec,
           p.camera,
           p.lens,
           p.focal_length,
@@ -405,8 +438,13 @@ export class IngestDb {
     return (this.db.prepare('SELECT * FROM photos WHERE id = ?').get(id) as unknown as PhotoRecord | undefined) ?? null
   }
 
-  photoCount(): number {
-    return (this.db.prepare('SELECT COUNT(*) AS n FROM photos').get() as { n: number }).n
+  /** Photos and videos in the project, and how many of them are videos. */
+  photoCount(): { photos: number; videos: number } {
+    const r = this.db.prepare(`SELECT COUNT(*) AS n, SUM(kind = 'video') AS v FROM photos`).get() as {
+      n: number
+      v: number | null
+    }
+    return { photos: r.n, videos: r.v ?? 0 }
   }
 
   listPhotos(offset: number, limit: number): PhotoSummary[] {
@@ -423,6 +461,16 @@ export class IngestDb {
     }[]
     const by = (s: JobState) => rows.find((r) => r.state === s)?.n ?? 0
     const imported = by('done')
+    const importedVideos =
+      imported === 0
+        ? 0
+        : (
+            this.db
+              .prepare(
+                `SELECT COUNT(*) AS n FROM jobs WHERE batch = ? AND state = 'done' AND format IN (${VIDEO_FORMATS_SQL})`
+              )
+              .get(batch) as { n: number }
+          ).n
     const duplicates = by('duplicate')
     const failed = by('failed')
     const remaining = by('queued') + by('working')
@@ -430,6 +478,7 @@ export class IngestDb {
       total: imported + duplicates + failed + remaining,
       done: imported + duplicates + failed,
       imported,
+      importedVideos,
       duplicates,
       failed,
       remaining
@@ -510,11 +559,13 @@ export function toSummary(r: PhotoRecord): PhotoSummary {
     id: r.id,
     originalPath: r.original_path,
     name: r.name,
+    kind: r.kind ?? (isVideoFormat(r.format) ? 'video' : 'photo'),
     format: r.format,
     width: r.width,
     height: r.height,
     bytes: r.bytes,
     takenAt: r.taken_at,
+    durationMs: r.duration_ms ?? null,
     lqip: r.lqip,
     thumb: r.has_thumb ? derivativePath('thumb', r.id) : null,
     display: r.has_display ? derivativePath('display', r.id) : null,

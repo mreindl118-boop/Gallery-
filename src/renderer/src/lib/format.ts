@@ -12,6 +12,32 @@ export function photoCountLine(count: number): string {
   return plural(count, 'photo', 'photos')
 }
 
+/** "0:05", "2:14", "1:02:14". Null when the length is unknown. */
+export function durationLabel(ms: number | null | undefined): string | null {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return null
+  const total = Math.round(ms / 1000)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const two = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`
+}
+
+/** "11 photos", "2 videos" or "11 photos and 2 videos": what a count of mixed media is made of. */
+export function mediaCount(total: number, videos: number): string {
+  const photos = total - videos
+  if (videos <= 0) return plural(total, 'photo', 'photos')
+  if (photos <= 0) return plural(videos, 'video', 'videos')
+  return `${plural(photos, 'photo', 'photos')} and ${plural(videos, 'video', 'videos')}`
+}
+
+/** While a run is going, what the files are called: photos until a video turns up, then plain files. */
+function fileNoun(p: ImportProgress, n: number): string {
+  if (p.importedVideos <= 0) return plural(n, 'photo', 'photos')
+  if (p.importedVideos >= p.imported) return plural(n, 'video', 'videos')
+  return plural(n, 'file', 'files')
+}
+
 function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
@@ -73,21 +99,19 @@ export function importHeadline(p: ImportProgress): string {
           ? `Looking for photos. ${plural(p.total, 'file', 'files')} found so far.`
           : 'Looking for photos.'
       }
-      return `Importing ${done} of ${plural(p.total, 'photo', 'photos')} found so far.`
+      return `Importing ${done} of ${fileNoun(p, p.total)} found so far.`
     case 'importing': {
       const left = timeLeftLine(p.secondsLeft)
-      return `Importing ${done} of ${plural(p.total, 'photo', 'photos')}.${left ? ` ${left}` : ''}`
+      return `Importing ${done} of ${fileNoun(p, p.total)}.${left ? ` ${left}` : ''}`
     }
     case 'paused':
-      return `Paused at ${done} of ${plural(p.total, 'photo', 'photos')}.`
+      return `Paused at ${done} of ${fileNoun(p, p.total)}.`
     case 'done':
-      if (p.imported > 0) return `${plural(p.imported, 'photo', 'photos')} imported.`
+      if (p.imported > 0) return `${mediaCount(p.imported, p.importedVideos)} imported.`
       if (p.total > 0) return 'No new photos imported.'
-      return p.photos > 0
-        ? `${plural(p.photos, 'photo', 'photos')} in this project.`
-        : 'No photos found in what you added.'
+      return p.photos > 0 ? `${mediaCount(p.photos, p.videos)} in this project.` : 'No photos found in what you added.'
     case 'idle':
-      return p.photos > 0 ? `${plural(p.photos, 'photo', 'photos')} in this project.` : 'No photos yet.'
+      return p.photos > 0 ? `${mediaCount(p.photos, p.videos)} in this project.` : 'No photos yet.'
   }
 }
 
@@ -96,12 +120,12 @@ export function importDetails(p: ImportProgress): string[] {
   const lines: string[] = []
   // Throughput only matters for batches big enough to wait for.
   if (isImporting(p) && p.filesPerSecond >= 1 && p.total >= 200) {
-    lines.push(`${plural(Math.round(p.filesPerSecond), 'photo', 'photos')} a second`)
+    lines.push(`${fileNoun(p, Math.round(p.filesPerSecond))} a second`)
   }
   if (p.duplicates > 0) lines.push(`${plural(p.duplicates, 'duplicate', 'duplicates')} skipped`)
   if (p.failed > 0) lines.push(`${plural(p.failed, 'file', 'files')} couldn’t be imported`)
   if (p.state === 'done' && p.imported > 0 && p.photos > p.imported) {
-    lines.push(`${plural(p.photos, 'photo', 'photos')} in this project`)
+    lines.push(`${mediaCount(p.photos, p.videos)} in this project`)
   }
   return lines
 }

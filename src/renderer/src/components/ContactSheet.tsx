@@ -1,11 +1,14 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
 import type { PhotoSummary } from '@shared/ingest'
+import { durationLabel } from '../lib/format'
 import './contact-sheet.css'
 
 /** Cells aim for this size and stretch so a row fills the available width exactly. */
 const TARGET_CELL = 184
 const MIN_COLUMNS = 2
+/** Room under a video's poster for its duration (line height of --size-12 plus a small gap). */
+const DURATION_ROW = 20
 
 /** A px value of a space token (so gaps come from tokens.css, not from here). */
 function tokenPx(el: HTMLElement, name: string, fallback: number): number {
@@ -86,17 +89,22 @@ export const ContactSheet = memo(function ContactSheet({
   )
 })
 
-/** One photo fitted whole inside a square cell. Memoized on the photo object, which the store keeps stable. */
+/**
+ * One photo fitted whole inside a square cell. A video shows its poster the same way, with its length in
+ * quiet text below the picture (never over it). Memoized on the photo object, which the store keeps stable.
+ */
 const Tile = memo(function Tile({ photo, cell, projectId }: { photo: PhotoSummary; cell: number; projectId: string }) {
   const { width: w, height: h } = photo
   const ratio = w > 0 && h > 0 ? w / h : 1
-  const bw = ratio >= 1 ? cell : Math.round(cell * ratio)
-  const bh = ratio >= 1 ? Math.round(cell / ratio) : cell
+  const duration = photo.kind === 'video' ? durationLabel(photo.durationMs) : null
+  const maxH = duration ? cell - DURATION_ROW : cell
+  const bw = Math.min(cell, Math.round(maxH * ratio))
+  const bh = Math.min(maxH, Math.round(cell / ratio))
   const [loaded, setLoaded] = useState<string | null>(null)
   const thumb = photo.thumb ? galleryUrl(projectId, photo.thumb) : null
 
   return (
-    <div className="contact-cell" style={{ width: cell, height: cell }}>
+    <div className="contact-cell" style={{ width: cell, height: cell }} data-video={duration ? '' : undefined}>
       <div className="contact-photo" style={{ width: bw, height: bh }} data-empty={!photo.lqip || undefined}>
         {photo.lqip && <img className="contact-lqip" src={photo.lqip} alt="" draggable={false} />}
         {thumb && (
@@ -112,6 +120,11 @@ const Tile = memo(function Tile({ photo, cell, projectId }: { photo: PhotoSummar
         )}
         {!thumb && <span className="visually-hidden">{photo.name}</span>}
       </div>
+      {duration && (
+        <span className="contact-duration" style={{ height: DURATION_ROW }}>
+          {duration}
+        </span>
+      )}
     </div>
   )
 })

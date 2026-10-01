@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import sharp from 'sharp'
+import { video } from '../tests/fixtures/videos'
 import { launch, type Launched } from './harness'
 
 let l: Launched
@@ -145,6 +146,40 @@ test('adding a folder imports its photos, shows them in the contact sheet and li
   await expect(card).toContainText('11 photos')
   await card.click()
   await expect(sheet.locator('img.contact-thumb[data-loaded]')).toHaveCount(11, { timeout: 15_000 })
+})
+
+test('a folder with a photo and a video imports both; the video tile shows its length under the poster', async () => {
+  const { page } = l
+  const dir = join(sources, 'Weekend')
+  mkdirSync(dir)
+  await photo(join(dir, 'IMG_2000.jpg'), 20)
+  writeFileSync(join(dir, 'MVI_2001.mp4'), await video({ width: 640, height: 360, seconds: 134, fps: 5 }))
+  const project = await createProject('Weekend')
+  await page.getByRole('article', { name: 'Weekend', exact: true }).click()
+
+  await answerPickers([dir])
+  await page.getByRole('button', { name: 'Add folder' }).click()
+  await expect(page.getByText('1 photo and 1 video imported.')).toBeVisible({ timeout: 60_000 })
+
+  const sheet = page.getByRole('region', { name: 'Photos in this project' })
+  await expect(sheet.locator('img.contact-thumb[data-loaded]')).toHaveCount(2, { timeout: 30_000 })
+  const tile = sheet.locator('.contact-cell[data-video]')
+  await expect(tile).toHaveCount(1)
+  await expect(tile.getByRole('img', { name: 'MVI_2001.mp4' })).toBeVisible()
+  await expect(tile.locator('.contact-duration')).toHaveText('2:14')
+  // The length sits below the poster, not over it.
+  const poster = await tile.getByRole('img', { name: 'MVI_2001.mp4' }).boundingBox()
+  const label = await tile.locator('.contact-duration').boundingBox()
+  expect(poster && label && label.y >= poster.y + poster.height).toBe(true)
+  // Photo tiles have no label.
+  await expect(sheet.locator('.contact-cell:not([data-video]) .contact-duration')).toHaveCount(0)
+
+  expect(existsSync(join(project.folder, 'originals', 'Weekend', 'MVI_2001.mp4'))).toBe(true)
+  const thumbs = readdirSync(join(project.folder, '.gallery', 'derivatives', 'thumb-512'))
+  expect(thumbs.filter((f) => f.endsWith('.webp'))).toHaveLength(2)
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('article', { name: 'Weekend', exact: true })).toContainText('2 photos')
 })
 
 test('adding files with the picker imports them and a second add of the same files skips them', async () => {

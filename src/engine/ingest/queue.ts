@@ -1,6 +1,12 @@
 import { promises as fs } from 'node:fs'
-import { basename, join } from 'node:path'
-import type { ImportIssue, ImportProgress, ImportState, PhotoFormat } from '@shared/ingest'
+import { basename, dirname, join } from 'node:path'
+import {
+  isVideoFormat,
+  type ImportIssue,
+  type ImportProgress,
+  type ImportState,
+  type MediaFormat
+} from '@shared/ingest'
 import type { EngineEvent } from '@shared/rpc'
 import { IngestDb, toSummary, type IssueKind, type JobRow, type JobStage } from './db'
 import {
@@ -14,9 +20,10 @@ import {
 } from './derivatives'
 import { copyFileAtomic, freeBytes, hashFile, readHead } from './fsutil'
 import { EMPTY_REASON, HEAD_BYTES, identify, RAW_REASON, unsupportedReason } from './identify'
-import { readMetadata } from './metadata'
+import { EMPTY_META, readMetadata, type PhotoMeta } from './metadata'
 import { joinPosix, targetCandidates } from './paths'
 import type { WeightedPool } from './pool'
+import { extractPoster, probeVideo, videoMegapixels, type VideoInfo } from './video'
 import { walk } from './walk'
 
 /**
@@ -51,10 +58,12 @@ export const REASONS = {
     "galleryLAB couldn't read this file. Check that it's still there and not open in another app, then choose Retry.",
   corrupt:
     "This file looks damaged or incomplete, so galleryLAB couldn't open it. If you have another copy, add that one.",
+  corruptVideo: "galleryLAB couldn't read this video. It may be damaged or use an unsupported codec.",
   writeFailed:
     "galleryLAB couldn't save a copy in the project folder. Check that the Library drive is connected and has room, then choose Retry.",
   failed: 'Something went wrong while importing this file. Choose Retry to try again.',
-  duplicate: (name: string) => `This photo is already in the project as ${name}, so it was skipped.`
+  duplicate: (name: string, kind: 'photo' | 'video' = 'photo') =>
+    `This ${kind} is already in the project as ${name}, so it was skipped.`
 }
 
 class IssueError extends Error {
@@ -339,23 +348,31 @@ export class ProjectQueue {
       const h = await hashFile(job.source)
       // Check and claim in one synchronous step, so two copies in one batch can't both win.
       const dup = db.findDuplicate(h, job.id)
-      if (dup) throw new IssueError('duplicate', REASONS.duplicate(dup.name), false)
+      if (dup)
+        throw new IssueError('duplicate', REASONS.duplicate(dup.name, kind.kind === 'video' ? 'video' : 'photo'), false)
       hash = h
       format = kind.format
       bytes = st.size
       db.updateJob(job.id, { hash, format, bytes, stage: 'hashed' })
       job = { ...job, hash, format, bytes, stage: 'hashed' }
     }
-    const fmt: PhotoFormat = format
+    const fmt: MediaFormat = format
+    const video = isVideoFormat(fmt)
 
     // 2. Thumbnail first, from the source, so the contact sheet fills right away.
     await this.stage('hashed', job)
     let { width, height, lqip } = job
     let dims: { width: number; height: number } | null = width && height ? { width, height } : null
     if (!reached(job, 'thumbed') || !lqip || !width || !height || !(await derivativeExists(root, 'thumb', hash))) {
-      dims = await probe(job.source, fmt)
-      const thumb = await this.ctx.pool.run(megapixels(dims), 0, () => makeThumb(root, hash, job.source, fmt, dims))
-      ;({ width, height, lqip } = thumb)
+      if (video) {
+        // The poster frame becomes every derivative at once; a quit before the copy only redoes this step.
+        const thumb = await this.videoDerivatives(hash, job.source, ['thumb', 'display'])
+        ;({ width, height, lqip } = thumb)
+      } else {
+        dims = await probe(job.source, fmt)
+        const thumb = await this.ctx.pool.run(megapixels(dims), 0, () => makeThumb(root, hash, job.source, fmt, dims))
+        ;({ width, height, lqip } = thumb)
+      }
       dims = { width, height }
       db.updateJob(job.id, { width, height, lqip, stage: 'thumbed' })
       job = { ...job, width, height, lqip, stage: 'thumbed' }
@@ -374,17 +391,24 @@ export class ProjectQueue {
     // 4. Metadata, then the photo row; the contact sheet can show it now.
     await this.stage('copied', job)
     if (!reached(job, 'recorded') || !db.photo(hash)) {
-      const meta = await readMetadata(copy)
+      let meta: PhotoMeta = EMPTY_META
+      let info: VideoInfo | null = null
+      if (video) info = await this.probeVideo(copy)
+      else meta = await readMetadata(copy)
       const rec = db.upsertPhoto({
         id: hash,
         job_id: job.id,
         original_path: target,
         name: basename(target),
+        kind: video ? 'video' : 'photo',
         format: fmt,
         width: width!,
         height: height!,
         bytes,
-        taken_at: meta.takenAt,
+        taken_at: video ? info!.takenAt : meta.takenAt,
+        duration_ms: info?.durationMs ?? null,
+        fps: info?.fps ?? null,
+        codec: info?.codec ?? null,
         camera: meta.camera,
         lens: meta.lens,
         focal_length: meta.focalLength,
@@ -409,13 +433,53 @@ export class ProjectQueue {
     // 5. Display size, from the copy.
     await this.stage('display', job)
     if (!(await derivativeExists(root, 'display', hash))) {
-      await this.ctx.pool.run(megapixels(dims), 1, () => makeDisplay(root, hash, copy, fmt))
+      if (video) await this.videoDerivatives(hash, copy, ['display'])
+      else await this.ctx.pool.run(megapixels(dims), 1, () => makeDisplay(root, hash, copy, fmt))
     }
     db.tx(() => {
       db.setDisplay(hash)
       db.updateJob(job.id, { state: 'done', stage: 'done', error_kind: null, error_reason: null, retryable: null })
     })
     this.emitPhotos([hash])
+  }
+
+  /** ffprobe facts about a video; a file ffprobe can't read is reported as damaged. */
+  private async probeVideo(file: string): Promise<VideoInfo> {
+    try {
+      return await probeVideo(file)
+    } catch (err) {
+      throw videoError(err)
+    }
+  }
+
+  /**
+   * One poster frame from the video, then the asked-for derivatives from it
+   * through the same sharp pipeline as a photo. Counts against the decode
+   * pool like a photo of the frame's size.
+   */
+  private async videoDerivatives(
+    hash: string,
+    file: string,
+    which: ('thumb' | 'display')[]
+  ): Promise<{ width: number; height: number; lqip: string }> {
+    const info = await this.probeVideo(file)
+    return this.ctx.pool.run(videoMegapixels(info), which.includes('thumb') ? 0 : 1, async () => {
+      let poster: string
+      try {
+        poster = await extractPoster(file, info)
+      } catch (err) {
+        throw videoError(err)
+      }
+      try {
+        const dims = await probe(poster, 'png')
+        let out = { width: dims!.width, height: dims!.height, lqip: '' }
+        if (which.includes('thumb')) out = await makeThumb(this.root, hash, poster, 'png', dims)
+        if (which.includes('display')) await makeDisplay(this.root, hash, poster, 'png')
+        return out
+      } finally {
+        await fs.rm(dirname(poster), { recursive: true, force: true }).catch(() => undefined)
+      }
+    })
   }
 
   /** Copies the file to its first free name under originals/ and returns the target relative to the project. */
@@ -502,13 +566,16 @@ export class ProjectQueue {
       imported: 0,
       duplicates: 0,
       failed: 0,
+      importedVideos: 0,
       photos: 0,
+      videos: 0,
       filesPerSecond: 0,
       secondsLeft: null
     }
     if (!db) return base
     const batch = db.currentBatch()
     const c = db.counts(batch)
+    const count = db.photoCount()
     const remaining = c.remaining
     let state: ImportState
     if (this.paused && (remaining > 0 || this.discovering > 0)) state = 'paused'
@@ -534,7 +601,9 @@ export class ProjectQueue {
       imported: c.imported,
       duplicates: c.duplicates,
       failed: c.failed,
-      photos: db.photoCount(),
+      importedVideos: c.importedVideos,
+      photos: count.photos,
+      videos: count.videos,
       filesPerSecond,
       secondsLeft
     }
@@ -573,6 +642,11 @@ async function fileExists(p: string): Promise<boolean> {
     .stat(p)
     .then((s) => s.isFile())
     .catch(() => false)
+}
+
+/** ffmpeg/ffprobe trouble with the file itself is a damaged video; filesystem errors pass through. */
+function videoError(err: unknown): Error {
+  return err instanceof DecodeError ? new IssueError('corrupt', REASONS.corruptVideo, false) : (err as Error)
 }
 
 function writeError(err: unknown): Error {

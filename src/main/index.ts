@@ -86,6 +86,7 @@ async function main(): Promise<void> {
     'orf',
     'rw2'
   ]
+  const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi']
 
   const host = new LibraryHost({
     trash: (p) => shell.trashItem(p),
@@ -211,11 +212,13 @@ async function main(): Promise<void> {
       'photos.list': ({ id, offset, limit }) => ingest('photos', id, { offset, limit }),
       'import.pickFiles': async () => {
         const opts: Electron.OpenDialogOptions = {
-          title: 'Add photos',
+          title: 'Add photos and videos',
           buttonLabel: 'Add',
           properties: ['openFile', 'multiSelections'],
           filters: [
+            { name: 'Photos and videos', extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] },
             { name: 'Photos', extensions: IMAGE_EXTENSIONS },
+            { name: 'Videos', extensions: VIDEO_EXTENSIONS },
             { name: 'All files', extensions: ['*'] }
           ]
         }
