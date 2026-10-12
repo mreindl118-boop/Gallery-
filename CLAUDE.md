@@ -10,6 +10,11 @@ carry on from the next unchecked item. End every session by updating PROGRESS (c
 DECISIONS, and committing. A milestone is done only when its acceptance criteria pass, tests are green and
 the QA shots have been looked at.
 
+**Co-creation.** ChatGPT works on this repository too: infrastructure (CI, releases, provider verification,
+signing, fixtures) and coding during Claude's downtime. Claude is the coding authority. Roles and the hand-off
+protocol are in `README.md` and `AGENTS.md`; start a session with `git log` to see what the other did and read
+its hand-off in PROGRESS before continuing.
+
 ## Architecture
 
 ```
