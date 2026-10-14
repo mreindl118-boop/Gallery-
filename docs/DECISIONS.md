@@ -1,5 +1,13 @@
 # Decisions
 
+2026-10-14: XMP sidecars are copied to `<original image name>.xmp` before metadata is recorded, preserving their
+association through collision renaming, restarts and index rebuilds. Editor facts replace embedded metadata only
+when valid; an explicit keyword list replaces the embedded list. Image orientation remains the one used for
+the generated pixels. Full-name sidecars win over same-stem files, with `.xmp` and `.XMP` accepted. Linked,
+missing, oversized or unreadable optional sidecars are ignored; failures writing a present sidecar stop the
+import rather than claiming its metadata was preserved. XML entities are decoded once, without external
+entity expansion. All 158 unit tests, type checks, lint and production build pass.
+
 2026-10-14: import taskbar progress comes directly from the engine to main through a validated progress message,
 so a hidden or disconnected renderer cannot stop updates. Simultaneous running imports are weighted by file
 count; discovery has no percentage, and pause is shown only when every remaining queue is paused. Finished

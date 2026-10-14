@@ -1,4 +1,5 @@
 import { parse } from 'exifr'
+import { readXmp } from './xmp'
 
 /**
  * Photo metadata from EXIF, XMP and IPTC via exifr, normalised to plain
@@ -59,12 +60,25 @@ const OPTIONS = {
 }
 
 export async function readMetadata(file: string): Promise<PhotoMeta> {
+  let embedded: PhotoMeta = { ...EMPTY_META, keywords: [] }
   try {
     const raw = (await parse(file, OPTIONS)) as Record<string, unknown> | undefined
-    return raw ? normalizeMetadata(raw) : { ...EMPTY_META }
+    if (raw) embedded = normalizeMetadata(raw)
   } catch {
-    return { ...EMPTY_META }
+    // An unreadable embedded block does not invalidate an editor's sidecar.
   }
+  const raw = await readXmp(file)
+  if (!raw) return embedded
+  const edited = normalizeMetadata(raw)
+  const merged = { ...embedded }
+  for (const key of Object.keys(edited) as (keyof PhotoMeta)[]) {
+    // Derivatives use the image's orientation; a sidecar cannot rotate their pixels.
+    if (key === 'orientation' || key === 'keywords') continue
+    if (edited[key] !== null) Object.assign(merged, { [key]: edited[key] })
+  }
+  // A sidecar's keyword list replaces the camera's list, including an explicit empty list.
+  if ('subject' in raw || 'Keywords' in raw) merged.keywords = edited.keywords
+  return merged
 }
 
 /** Pure: exifr's merged output → PhotoMeta. */

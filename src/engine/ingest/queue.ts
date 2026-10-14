@@ -21,6 +21,7 @@ import {
 import { copyFileAtomic, freeBytes, hashFile, readHead } from './fsutil'
 import { EMPTY_REASON, HEAD_BYTES, identify, RAW_REASON, unsupportedReason } from './identify'
 import { EMPTY_META, readMetadata, type PhotoMeta } from './metadata'
+import { copyXmp } from './xmp'
 import { joinPosix, targetCandidates } from './paths'
 import type { WeightedPool } from './pool'
 import { notifyImportDone, registerDecodePool } from '../build/hooks'
@@ -393,6 +394,7 @@ export class ProjectQueue {
       job = { ...job, target, stage: 'copied' }
     }
     const copy = join(root, target)
+    if (!video) await copyXmp(job.source, copy)
 
     // 4. Metadata, then the photo row; the contact sheet can show it now.
     await this.stage('copied', job)
