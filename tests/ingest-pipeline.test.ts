@@ -10,6 +10,8 @@ import type { EngineEvent } from '@shared/rpc'
 import { createIngest, Ingest, type IngestOptions } from '../src/engine/ingest'
 import { REASONS } from '../src/engine/ingest/queue'
 import { RAW_REASON } from '../src/engine/ingest/identify'
+import { readMetadata } from '../src/engine/ingest/metadata'
+import { editedXmp } from './fixtures/xmp'
 import {
   avif,
   heads,
@@ -183,6 +185,24 @@ describe('ingest pipeline', () => {
     expect([pano.width, pano.height]).toEqual([12000, 1500])
     expect(await dims(join(root, pano.thumb!))).toEqual([512, 64, 'webp'])
     expect(await dims(join(root, pano.display!))).toEqual([2048, 256, 'webp'])
+  })
+
+  it('preserves editor sidecars in originals and records their metadata', async () => {
+    const { ingest, p, root } = setup()
+    const source = await writeFile(join(src, 'edited.jpg'), await jpegWithExif())
+    await writeFile(join(src, 'edited.xmp'), editedXmp)
+    ingest.add({ ...p, paths: [src] })
+    const { progress } = await waitFor(ingest, p)
+    expect(progress).toMatchObject({ total: 1, imported: 1, failed: 0 })
+    const [photo] = ingest.photos({ ...p, offset: 0, limit: 1 })
+    const saved = row(root, photo!.id)
+    expect(saved).toMatchObject({ rating: 0, title: 'Edited harbour', caption: 'A & B', camera: 'Canon EOS R5' })
+    expect(JSON.parse(saved.keywords as string)).toEqual(['edited', 'sea'])
+    const copy = join(root, photo!.originalPath)
+    expect(await fs.readFile(`${copy}.xmp`, 'utf8')).toBe(editedXmp)
+    expect(await fs.readFile(source)).toEqual(await fs.readFile(copy))
+    await fs.rm(src, { recursive: true })
+    expect(await readMetadata(copy)).toMatchObject({ title: 'Edited harbour', rating: 0 })
   })
 
   it('reads metadata', async () => {

@@ -23,6 +23,7 @@ function send(msg: EngineMessage): void {
 const ports = new Map<MessagePortMain, EventBatcher<EngineEvent>>()
 
 export function broadcast(event: EngineEvent): void {
+  if (event.type === 'import.progress') send({ kind: 'import-progress', progress: event.progress })
   for (const batcher of ports.values()) batcher.push(event)
 }
 

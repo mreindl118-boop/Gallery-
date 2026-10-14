@@ -4,7 +4,7 @@ Milestones from the brief (§16). A milestone is done only when every acceptance
 green, and its QA shots have been reviewed.
 
 **Next up:** verify the three generator providers against their real APIs (the container's network blocks
-them; the owner must allow the hosts), then M1 leftovers (reference mode, RAW previews, taskbar progress,
+them; the owner must allow the hosts), then M1 leftovers (reference mode, RAW previews, native taskbar verification,
 fixtures) and the rest of M2 (sessions/places, CLIP, photo info panel) and M3 (ExhibitionSpec, layout solver).
 
 ## M0 Foundation
@@ -59,7 +59,7 @@ Shipped in 0.2.0: open a project, drop photos or folders, import starts at once.
 - [x] Discover (streamed walk), identify by magic bytes, streaming hash (xxHash128), duplicates skipped and reported
 - [x] Store into `originals/` preserving subfolders (temp → rename, collision-safe); originals never modified
 - [x] Metadata via exifr (capture time, camera, lens, exposure, GPS, orientation, rating, title, caption, keywords)
-- [ ] `.xmp` sidecars read (currently skipped silently)
+- [x] `.xmp` sidecars read and preserved beside originals; editor titles/captions/ratings/keywords override embedded values, absent facts retain camera metadata. Full-name sidecars take precedence over same-stem files. No source image or sidecar is changed. Type checks, lint and all 158 unit tests pass, including the import and source-removal regression.
 - [x] Derivatives via sharp (LQIP 32 data URL, thumb 512, display 2048 WebP; sRGB, oriented, stripped); thumbnail first
 - [ ] Focus 4096 derivative; lazy DZI tiles > 24 MP
 - [x] HEIC via heic-decode
@@ -67,7 +67,7 @@ Shipped in 0.2.0: open a project, drop photos or folders, import starts at once.
 - [x] SQLite (node:sqlite, WAL, versioned) job queue; idempotent stages keyed by hash; resume after force-quit
 - [x] Decode pool gated by megapixels; `limitInputPixels` 1 GP; small sharp cache; `sequentialRead`
 - [x] Pause, resume, cancel (keeps finished work), retry; Library card progress
-- [ ] Windows taskbar progress (`setProgressBar`)
+- [ ] Windows taskbar progress (`setProgressBar`): implemented on `codex/queue-taskbar-progress`; engine-to-main progress works without a renderer, aggregates active projects, shows discovery/pause and clears on completion/restart. Type checks, lint and all 150 unit tests pass (eight focused checks). Native Windows taskbar verification remains before this box is ticked.
 - [ ] Bursts/near-duplicates (perceptual hash + capture time)
 - [x] Import view: virtualized contact sheet (LQIP first), one progress line, Issues list with reasons and Retry
 - [ ] Repair project rebuilds `.gallery/`
