@@ -1,5 +1,10 @@
 # Decisions
 
+2026-10-14: import taskbar progress comes directly from the engine to main through a validated progress message,
+so a hidden or disconnected renderer cannot stop updates. Simultaneous running imports are weighted by file
+count; discovery has no percentage, and pause is shown only when every remaining queue is paused. Finished
+queues are removed and an engine restart clears stale progress. Native Windows verification remains required.
+
 Choices the brief left open, with the reason. Newest last.
 
 | Date       | Decision                                                                                                                                                                                                                                             | Reason                                                                                                                                                                                                                            |

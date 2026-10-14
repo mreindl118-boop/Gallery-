@@ -4,6 +4,7 @@ import { releasesPageUrl } from '@shared/release'
 import { EVENT_CHANNEL, GalleryError, type MainEvent } from '@shared/rpc'
 import type { LibraryProblem, LibraryStatus } from '@shared/schemas'
 import { EngineHost } from './engine-host'
+import { ImportTaskbar, type TaskbarState } from './import-taskbar'
 import type { Library } from './library'
 import { GeneratorStore } from './generator-store'
 import { LibraryHost } from './library-host'
@@ -35,6 +36,12 @@ async function main(): Promise<void> {
   const settings = new SettingsStore()
   const generator = new GeneratorStore()
   let win: BrowserWindow | null = null
+  const taskbar = new ImportTaskbar()
+  const showTaskbar = ({ value, mode }: TaskbarState): void => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.setProgressBar(value, { mode })
+    }
+  }
 
   const emit = (event: MainEvent): void => {
     for (const w of BrowserWindow.getAllWindows()) {
@@ -42,11 +49,15 @@ async function main(): Promise<void> {
     }
   }
 
-  const engine = new EngineHost((state) => {
-    emit({ type: 'engine.state', state })
-    // After every (re)start, pick up imports that were interrupted (quit, crash, power loss).
-    if (state === 'ready') void resumeImports()
-  })
+  const engine = new EngineHost(
+    (state) => {
+      emit({ type: 'engine.state', state })
+      if (state !== 'ready') showTaskbar(taskbar.clear())
+      // After every (re)start, pick up imports that were interrupted (quit, crash, power loss).
+      if (state === 'ready') void resumeImports()
+    },
+    (progress) => showTaskbar(taskbar.update(progress))
+  )
 
   async function resumeImports(): Promise<void> {
     await host.settled()
@@ -316,6 +327,7 @@ async function main(): Promise<void> {
   const open = (): void => {
     win = createMainWindow()
     const w = win
+    w.setProgressBar(taskbar.current().value, { mode: taskbar.current().mode })
     startupLog('window created')
     w.webContents.on('did-finish-load', () => {
       startupLog('renderer loaded')

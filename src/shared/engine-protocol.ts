@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ImportProgress } from './ingest'
 
 /** Messages between main and the engine utility process (parentPort). */
 export const EngineRequest = z.object({
@@ -18,6 +19,8 @@ export const EngineMessage = z.discriminatedUnion('kind', [
     error: z.object({ code: z.string(), message: z.string() }).optional()
   }),
   z.object({ kind: z.literal('ready'), version: z.string() }),
+  /** Native taskbar progress must reach main even with no renderer connected. */
+  z.object({ kind: z.literal('import-progress'), progress: ImportProgress }),
   z.object({ kind: z.literal('log'), level: z.enum(['info', 'warn', 'error']), message: z.string() })
 ])
 export type EngineMessage = z.infer<typeof EngineMessage>

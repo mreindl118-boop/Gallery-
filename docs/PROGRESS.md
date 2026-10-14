@@ -67,7 +67,7 @@ Shipped in 0.2.0: open a project, drop photos or folders, import starts at once.
 - [x] SQLite (node:sqlite, WAL, versioned) job queue; idempotent stages keyed by hash; resume after force-quit
 - [x] Decode pool gated by megapixels; `limitInputPixels` 1 GP; small sharp cache; `sequentialRead`
 - [x] Pause, resume, cancel (keeps finished work), retry; Library card progress
-- [ ] Windows taskbar progress (`setProgressBar`)
+- [ ] Windows taskbar progress (`setProgressBar`): implemented on `codex/queue-taskbar-progress`; engine-to-main progress works without a renderer, aggregates active projects, shows discovery/pause and clears on completion/restart. Type checks, lint and all 150 unit tests pass (eight focused checks). Native Windows taskbar verification remains before this box is ticked.
 - [ ] Bursts/near-duplicates (perceptual hash + capture time)
 - [x] Import view: virtualized contact sheet (LQIP first), one progress line, Issues list with reasons and Retry
 - [ ] Repair project rebuilds `.gallery/`
