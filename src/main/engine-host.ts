@@ -3,6 +3,7 @@ import { MessageChannelMain, utilityProcess, type UtilityProcess, type WebConten
 import { EngineMessage, ENGINE_ATTACH_PORT, type EngineRequest } from '@shared/engine-protocol'
 import { ENGINE_PORT_CHANNEL, GalleryError } from '@shared/rpc'
 import type { EngineState } from '@shared/schemas'
+import type { ImportProgress } from '@shared/ingest'
 import { startupLog } from './startup-log'
 
 interface Pending {
@@ -26,7 +27,10 @@ export class EngineHost {
   private readonly renderers = new Set<WebContents>()
   state: EngineState = 'starting'
 
-  constructor(private readonly onState: (s: EngineState) => void) {}
+  constructor(
+    private readonly onState: (s: EngineState) => void,
+    private readonly onImportProgress: (progress: ImportProgress) => void = () => undefined
+  ) {}
 
   start(): void {
     this.stopping = false
@@ -59,6 +63,8 @@ export class EngineHost {
         clearTimeout(p.timer)
         if (msg.ok) p.resolve(msg.value)
         else p.reject(new GalleryError(msg.error?.code ?? 'engine', msg.error?.message ?? 'The engine failed.'))
+      } else if (msg.kind === 'import-progress') {
+        this.onImportProgress(msg.progress)
       } else if (msg.kind === 'log') {
         console[msg.level](`[engine] ${msg.message}`)
       }
